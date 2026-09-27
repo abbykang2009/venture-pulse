@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, RefreshCw, Send, PlusCircle, ShieldAlert, LogOut, Lock, CheckCircle2, ShieldCheck, X, Image as ImageIcon } from 'lucide-react';
+import { Building2, RefreshCw, Send, PlusCircle, ShieldAlert, LogOut, Lock, CheckCircle2, ShieldCheck, X, Image as ImageIcon, Loader2 } from 'lucide-react';
 
 interface User {
   id: string;
@@ -29,35 +29,13 @@ declare global {
 
 const ADMIN_HANDLES = ['exhamstersg', 'EmilyCucCung'];
 
-const INITIAL_DEALS: Deal[] = [
-  {
-    id: '1',
-    name: 'Fintech Cross-Border Payments',
-    stage: 'Seed',
-    description: 'B2B payment rail infrastructure expansion across Southeast Asia.',
-    rate: '$50,000 / unit',
-    originCity: 'Singapore',
-    hqCity: 'Singapore',
-    postedBy: 'exhamstersg'
-  },
-  {
-    id: '2',
-    name: 'AI Workflow Automation Platform',
-    stage: 'Pre-Seed',
-    description: 'LLM-powered document processing agent for enterprise compliance.',
-    rate: '$25,000 / unit',
-    originCity: 'Ho Chi Minh City',
-    hqCity: 'Singapore',
-    postedBy: 'EmilyCucCung'
-  }
-];
-
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [selectedRole, setSelectedRole] = useState<'Investor' | 'Vc' | 'Business' | 'Admin'>('Investor');
   const [selectedStage, setSelectedStage] = useState<string>('All');
-  const [deals, setDeals] = useState<Deal[]>(INITIAL_DEALS);
-  
+  const [deals, setDeals] = useState<Deal[]>([]);
+  const [isLoadingDeals, setIsLoadingDeals] = useState(true);
+
   // Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [name, setName] = useState('');
@@ -66,14 +44,15 @@ export default function App() {
   const [originCity, setOriginCity] = useState('');
   const [hqCity, setHqCity] = useState('');
   const [description, setDescription] = useState('');
-  
+
   // Image Upload State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isAdmin = user ? ADMIN_HANDLES.includes(user.username) : false;
 
+  // Load saved session
   useEffect(() => {
     const savedUser = localStorage.getItem('vp_user');
     if (savedUser) {
@@ -83,6 +62,7 @@ export default function App() {
     }
   }, []);
 
+  // Set up Telegram widget callback
   useEffect(() => {
     window.onTelegramAuth = (telegramUser: User) => {
       setUser(telegramUser);
@@ -91,6 +71,7 @@ export default function App() {
     };
   }, []);
 
+  // Inject Telegram widget
   useEffect(() => {
     if (!user) {
       const container = document.getElementById('telegram-widget-container');
@@ -105,6 +86,30 @@ export default function App() {
         script.async = true;
         container.appendChild(script);
       }
+    }
+  }, [user]);
+
+  // Fetch deals from Cloudflare D1 backend API
+  const fetchDeals = async () => {
+    setIsLoadingDeals(true);
+    try {
+      const res = await fetch('/api/deals');
+      if (res.ok) {
+        const data = await res.json();
+        setDeals(data);
+      } else {
+        console.error('Failed to fetch deals from Cloudflare D1 API');
+      }
+    } catch (err) {
+      console.error('Error fetching deals:', err);
+    } finally {
+      setIsLoadingDeals(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchDeals();
     }
   }, [user]);
 
@@ -125,56 +130,52 @@ export default function App() {
     e.preventDefault();
     if (!name || !description || !rate || !originCity || !hqCity) return;
 
-    setIsUploading(true);
-    let uploadedImageUrl = '';
+    setIsSubmitting(true);
 
-    // Upload to R2 via Cloudflare Pages Function endpoint
-    if (selectedFile) {
-      try {
-        const formData = new FormData();
+    try {
+      const formData = new FormData();
+      formData.append('name', name);
+      formData.append('stage', stage);
+      formData.append('rate', rate);
+      formData.append('originCity', originCity);
+      formData.append('hqCity', hqCity);
+      formData.append('description', description);
+      formData.append('postedBy', user?.username || user?.first_name || 'Anonymous');
+
+      if (selectedFile) {
         formData.append('file', selectedFile);
-
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          uploadedImageUrl = data.url;
-        } else {
-          console.error('Failed to upload image:', await res.text());
-        }
-      } catch (error) {
-        console.error('Error uploading image to R2:', error);
       }
+
+      const res = await fetch('/api/create-deal', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.ok) {
+        // Refetch updated list directly from D1 Database
+        await fetchDeals();
+
+        // Reset Form
+        setName('');
+        setStage('Pre-Seed');
+        setRate('');
+        setOriginCity('');
+        setHqCity('');
+        setDescription('');
+        setSelectedFile(null);
+        setPreviewUrl(null);
+        setIsModalOpen(false);
+      } else {
+        const errText = await res.text();
+        console.error('Failed to save deal:', errText);
+        alert('Error publishing opportunity. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error saving deal:', error);
+      alert('Error publishing opportunity. Check network log.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    const newDealItem: Deal = {
-      id: Date.now().toString(),
-      name,
-      stage,
-      rate,
-      originCity,
-      hqCity,
-      description,
-      imageUrl: uploadedImageUrl || previewUrl || undefined,
-      postedBy: user?.username || user?.first_name || 'Anonymous'
-    };
-
-    setDeals([newDealItem, ...deals]);
-    
-    // Reset Form
-    setName('');
-    setStage('Pre-Seed');
-    setRate('');
-    setOriginCity('');
-    setHqCity('');
-    setDescription('');
-    setSelectedFile(null);
-    setPreviewUrl(null);
-    setIsUploading(false);
-    setIsModalOpen(false);
   };
 
   const filteredDeals = selectedStage === 'All'
@@ -254,8 +255,12 @@ export default function App() {
             </div>
           )}
 
-          <button className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white transition">
-            <RefreshCw className="w-4 h-4" />
+          <button
+            onClick={fetchDeals}
+            title="Refresh Feed"
+            className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white transition"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoadingDeals ? 'animate-spin' : ''}`} />
           </button>
 
           <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-indigo-300">
@@ -285,7 +290,7 @@ export default function App() {
           </span>
         </div>
 
-        <button 
+        <button
           onClick={() => setIsModalOpen(true)}
           className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition shadow-lg shadow-indigo-600/20"
         >
@@ -310,7 +315,12 @@ export default function App() {
         ))}
       </div>
 
-      {filteredDeals.length === 0 ? (
+      {isLoadingDeals ? (
+        <div className="border border-slate-800/80 bg-slate-900/30 rounded-2xl p-16 flex flex-col items-center justify-center gap-3 text-slate-400 font-medium">
+          <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+          <span>Loading live investment deals...</span>
+        </div>
+      ) : filteredDeals.length === 0 ? (
         <div className="border border-slate-800/80 bg-slate-900/30 rounded-2xl p-16 text-center text-slate-400 font-medium">
           No investment opportunities found for this stage.
         </div>
@@ -355,7 +365,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL FORM WITH UPDATED PARAMETERS */}
+      {/* MODAL FORM WITH D1 & R2 SUPPORT */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -364,7 +374,7 @@ export default function App() {
                 <PlusCircle className="w-5 h-5 text-indigo-400" />
                 Post Investment Opportunity
               </h2>
-              <button 
+              <button
                 onClick={() => setIsModalOpen(false)}
                 className="p-1 text-slate-400 hover:text-white rounded-lg"
               >
@@ -491,10 +501,11 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isUploading}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl transition shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl transition shadow-lg shadow-indigo-600/20 disabled:opacity-50 flex items-center gap-2"
                 >
-                  {isUploading ? 'Uploading Image...' : 'Publish Deal'}
+                  {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isSubmitting ? 'Saving to Database...' : 'Publish Deal'}</span>
                 </button>
               </div>
             </form>
