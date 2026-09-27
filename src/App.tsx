@@ -18,7 +18,7 @@ interface Deal {
   location: string;
 }
 
-// Global interface for Telegram window callback
+// Declare Telegram callback interface on global window
 declare global {
   interface Window {
     onTelegramAuth?: (user: User) => void;
@@ -58,7 +58,7 @@ export default function App() {
   const [selectedStage, setSelectedStage] = useState<string>('All');
   const [deals, setDeals] = useState<Deal[]>(INITIAL_DEALS);
 
-  // Load saved session on mount
+  // Load persistent user session on mount
   useEffect(() => {
     const savedUser = localStorage.getItem('vp_user');
     if (savedUser) {
@@ -66,7 +66,7 @@ export default function App() {
     }
   }, []);
 
-  // Global Telegram callback listener
+  // Set up Telegram widget global auth handler
   useEffect(() => {
     window.onTelegramAuth = (telegramUser: User) => {
       setUser(telegramUser);
@@ -74,14 +74,13 @@ export default function App() {
     };
   }, []);
 
-  // Dynamically inject Telegram Script into the container element
+  // Dynamically inject Telegram Script into container element
   useEffect(() => {
     if (!user) {
       const container = document.getElementById('telegram-widget-container');
       if (container && container.childNodes.length === 0) {
         const script = document.createElement('script');
         script.src = 'https://telegram.org/js/telegram-widget.js?22';
-        // REPLACE WITH YOUR BOT USERNAME CREATED IN BOTFATHER:
         script.setAttribute('data-telegram-login', 'VenturePulseAuthBot');
         script.setAttribute('data-size', 'large');
         script.setAttribute('data-radius', '12');
@@ -107,11 +106,11 @@ export default function App() {
   // ---------------------------------------------------------------------------
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#070913] text-slate-100 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-slate-900/80 border border-slate-800 rounded-3xl p-8 space-y-8 shadow-2xl text-center">
+      <div className="min-h-screen bg-[#070913] text-slate-100 flex items-center justify-center p-4 font-sans">
+        <div className="w-full max-w-md bg-slate-900/80 border border-slate-800 rounded-3xl p-8 space-y-8 shadow-2xl text-center backdrop-blur-xl">
           
           <div className="space-y-3">
-            <div className="inline-flex p-3 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl text-indigo-400">
+            <div className="inline-flex p-3.5 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl text-indigo-400">
               <Building2 className="w-8 h-8" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-white">VenturePulse</h1>
@@ -120,7 +119,7 @@ export default function App() {
             </p>
           </div>
 
-          <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 text-left space-y-2 text-xs text-slate-300">
+          <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 text-left space-y-2 text-xs text-slate-300">
             <div className="flex items-center gap-2 text-indigo-400 font-semibold">
               <Lock className="w-4 h-4" />
               <span>Restricted Access</span>
@@ -135,9 +134,9 @@ export default function App() {
             <div id="telegram-widget-container"></div>
           </div>
 
-          <div className="flex items-center justify-center gap-4 text-xs text-slate-500 pt-2">
-            <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Verified Investors</span>
-            <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Anonymous Handles</span>
+          <div className="flex items-center justify-center gap-4 text-xs text-slate-500 pt-2 border-t border-slate-800/60">
+            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Verified Investors</span>
+            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Anonymous Handles</span>
           </div>
 
         </div>
@@ -187,7 +186,7 @@ export default function App() {
             <RefreshCw className="w-4 h-4" />
           </button>
 
-          {/* User Badge showing verified Telegram Username */}
+          {/* User Badge showing verified Telegram Handle */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-indigo-300">
             <Send className="w-3.5 h-3.5 text-indigo-400" />
             <span>@{user.username || user.first_name}</span>
