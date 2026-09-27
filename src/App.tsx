@@ -6,6 +6,7 @@ interface User {
   username: string;
   first_name: string;
   auth_date: number;
+  hash?: string;
 }
 
 interface Deal {
@@ -15,6 +16,13 @@ interface Deal {
   description: string;
   amountNeeded: string;
   location: string;
+}
+
+// Global interface for Telegram window callback
+declare global {
+  interface Window {
+    onTelegramAuth?: (user: User) => void;
+  }
 }
 
 const INITIAL_DEALS: Deal[] = [
@@ -50,7 +58,7 @@ export default function App() {
   const [selectedStage, setSelectedStage] = useState<string>('All');
   const [deals, setDeals] = useState<Deal[]>(INITIAL_DEALS);
 
-  // Load user session on mount
+  // Load saved session on mount
   useEffect(() => {
     const savedUser = localStorage.getItem('vp_user');
     if (savedUser) {
@@ -58,16 +66,32 @@ export default function App() {
     }
   }, []);
 
-  const handleDemoLogin = () => {
-    const mockUser: User = {
-      id: '99823411',
-      username: 'investor_anon_99',
-      first_name: 'Alex',
-      auth_date: Math.floor(Date.now() / 1000)
+  // Global Telegram callback listener
+  useEffect(() => {
+    window.onTelegramAuth = (telegramUser: User) => {
+      setUser(telegramUser);
+      localStorage.setItem('vp_user', JSON.stringify(telegramUser));
     };
-    setUser(mockUser);
-    localStorage.setItem('vp_user', JSON.stringify(mockUser));
-  };
+  }, []);
+
+  // Dynamically inject Telegram Script into the container element
+  useEffect(() => {
+    if (!user) {
+      const container = document.getElementById('telegram-widget-container');
+      if (container && container.childNodes.length === 0) {
+        const script = document.createElement('script');
+        script.src = 'https://telegram.org/js/telegram-widget.js?22';
+        // REPLACE WITH YOUR BOT USERNAME CREATED IN BOTFATHER:
+        script.setAttribute('data-telegram-login', 'VenturePulseAuthBot');
+        script.setAttribute('data-size', 'large');
+        script.setAttribute('data-radius', '12');
+        script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+        script.setAttribute('data-request-access', 'write');
+        script.async = true;
+        container.appendChild(script);
+      }
+    }
+  }, [user]);
 
   const handleLogout = () => {
     setUser(null);
@@ -79,7 +103,7 @@ export default function App() {
     : deals.filter(deal => deal.stage === selectedStage);
 
   // ---------------------------------------------------------------------------
-  // COMPULSORY LOGIN SCREEN (Rendered if user is not authenticated)
+  // COMPULSORY LOGIN SCREEN (Active enforcement if unauthenticated)
   // ---------------------------------------------------------------------------
   if (!user) {
     return (
@@ -106,26 +130,12 @@ export default function App() {
             </p>
           </div>
 
-          <div className="space-y-3 pt-2">
-            {/* Primary Telegram Action */}
-            <button
-              onClick={handleDemoLogin}
-              className="w-full flex items-center justify-center gap-3 py-3.5 px-4 bg-[#2AABEE] hover:bg-[#229ED9] text-white font-semibold rounded-xl transition shadow-lg shadow-[#2AABEE]/20 text-sm"
-            >
-              <Send className="w-4 h-4 fill-current" />
-              <span>Log in with Telegram</span>
-            </button>
-
-            {/* Quick Demo Bypass */}
-            <button
-              onClick={handleDemoLogin}
-              className="w-full py-2.5 px-4 bg-slate-800/80 hover:bg-slate-800 text-slate-400 hover:text-white font-medium rounded-xl transition text-xs border border-slate-700/50"
-            >
-              Quick Test Login (Demo Mode)
-            </button>
+          {/* Official Telegram Widget Injected Here */}
+          <div className="flex justify-center items-center py-2 min-h-[48px]">
+            <div id="telegram-widget-container"></div>
           </div>
 
-          <div className="flex items-center justify-center gap-4 text-xs text-slate-500">
+          <div className="flex items-center justify-center gap-4 text-xs text-slate-500 pt-2">
             <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Verified Investors</span>
             <span className="flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Anonymous Handles</span>
           </div>
@@ -177,10 +187,10 @@ export default function App() {
             <RefreshCw className="w-4 h-4" />
           </button>
 
-          {/* User Badge */}
+          {/* User Badge showing verified Telegram Username */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-indigo-300">
             <Send className="w-3.5 h-3.5 text-indigo-400" />
-            <span>@{user.username}</span>
+            <span>@{user.username || user.first_name}</span>
           </div>
 
           {/* Logout Button */}
