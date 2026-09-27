@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, RefreshCw, Send, PlusCircle, ShieldAlert, LogOut, Lock, CheckCircle2, ShieldCheck, X } from 'lucide-react';
+import { Building2, RefreshCw, Send, PlusCircle, ShieldAlert, LogOut, Lock, CheckCircle2, ShieldCheck, X, Image as ImageIcon } from 'lucide-react';
 
 interface User {
   id: string;
@@ -11,51 +11,44 @@ interface User {
 
 interface Deal {
   id: string;
-  title: string;
+  name: string;
   stage: string;
   description: string;
-  amountNeeded: string;
-  location: string;
+  rate: string;
+  originCity: string;
+  hqCity: string;
+  imageUrl?: string;
   postedBy?: string;
 }
 
-// Global interface for Telegram window callback
 declare global {
   interface Window {
     onTelegramAuth?: (user: User) => void;
   }
 }
 
-// LIST YOUR ADMIN TELEGRAM USERNAMES HERE (without the @ symbol)
-const ADMIN_HANDLES = [
-  'exhamstersg',
-  'EmilyCucCung'
-]; 
+const ADMIN_HANDLES = ['exhamstersg', 'EmilyCucCung'];
 
 const INITIAL_DEALS: Deal[] = [
   {
     id: '1',
-    title: 'Fintech Cross-Border Payments',
+    name: 'Fintech Cross-Border Payments',
     stage: 'Seed',
     description: 'B2B payment rail infrastructure expansion across Southeast Asia.',
-    amountNeeded: '$1.5M',
-    location: 'Singapore'
+    rate: '$50,000 / unit',
+    originCity: 'Singapore',
+    hqCity: 'Singapore',
+    postedBy: 'exhamstersg'
   },
   {
     id: '2',
-    title: 'AI Workflow Automation Platform',
+    name: 'AI Workflow Automation Platform',
     stage: 'Pre-Seed',
     description: 'LLM-powered document processing agent for enterprise compliance.',
-    amountNeeded: '$500k',
-    location: 'Remote'
-  },
-  {
-    id: '3',
-    title: 'Logistics Optimization API',
-    stage: 'Series A',
-    description: 'Route planning and telemetry data analytics for regional fleets.',
-    amountNeeded: '$5.0M',
-    location: 'Vietnam'
+    rate: '$25,000 / unit',
+    originCity: 'Ho Chi Minh City',
+    hqCity: 'Singapore',
+    postedBy: 'EmilyCucCung'
   }
 ];
 
@@ -65,45 +58,39 @@ export default function App() {
   const [selectedStage, setSelectedStage] = useState<string>('All');
   const [deals, setDeals] = useState<Deal[]>(INITIAL_DEALS);
   
-  // Modal State
+  // Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newStage, setNewStage] = useState('Pre-Seed');
-  const [newAmount, setNewAmount] = useState('');
-  const [newLocation, setNewLocation] = useState('');
-  const [newDescription, setNewDescription] = useState('');
+  const [name, setName] = useState('');
+  const [stage, setStage] = useState('Pre-Seed');
+  const [rate, setRate] = useState('');
+  const [originCity, setOriginCity] = useState('');
+  const [hqCity, setHqCity] = useState('');
+  const [description, setDescription] = useState('');
+  
+  // Image Upload State
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
-  // Check if current user is an Admin
   const isAdmin = user ? ADMIN_HANDLES.includes(user.username) : false;
 
-  // Load saved user session on mount
   useEffect(() => {
     const savedUser = localStorage.getItem('vp_user');
     if (savedUser) {
       const parsedUser: User = JSON.parse(savedUser);
       setUser(parsedUser);
-      if (ADMIN_HANDLES.includes(parsedUser.username)) {
-        setSelectedRole('Admin');
-      } else {
-        setSelectedRole('Investor');
-      }
+      setSelectedRole(ADMIN_HANDLES.includes(parsedUser.username) ? 'Admin' : 'Investor');
     }
   }, []);
 
-  // Global Telegram callback listener
   useEffect(() => {
     window.onTelegramAuth = (telegramUser: User) => {
       setUser(telegramUser);
       localStorage.setItem('vp_user', JSON.stringify(telegramUser));
-      if (ADMIN_HANDLES.includes(telegramUser.username)) {
-        setSelectedRole('Admin');
-      } else {
-        setSelectedRole('Investor');
-      }
+      setSelectedRole(ADMIN_HANDLES.includes(telegramUser.username) ? 'Admin' : 'Investor');
     };
   }, []);
 
-  // Dynamically inject Telegram Script into container element
   useEffect(() => {
     if (!user) {
       const container = document.getElementById('telegram-widget-container');
@@ -121,33 +108,72 @@ export default function App() {
     }
   }, [user]);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('vp_user');
   };
 
-  const handleCreateListing = (e: React.FormEvent) => {
+  const handleCreateListing = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle || !newDescription || !newAmount || !newLocation) return;
+    if (!name || !description || !rate || !originCity || !hqCity) return;
+
+    setIsUploading(true);
+    let uploadedImageUrl = '';
+
+    // Upload to R2 via Cloudflare Pages Function endpoint
+    if (selectedFile) {
+      try {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          uploadedImageUrl = data.url;
+        } else {
+          console.error('Failed to upload image:', await res.text());
+        }
+      } catch (error) {
+        console.error('Error uploading image to R2:', error);
+      }
+    }
 
     const newDealItem: Deal = {
       id: Date.now().toString(),
-      title: newTitle,
-      stage: newStage,
-      amountNeeded: newAmount,
-      location: newLocation,
-      description: newDescription,
+      name,
+      stage,
+      rate,
+      originCity,
+      hqCity,
+      description,
+      imageUrl: uploadedImageUrl || previewUrl || undefined,
       postedBy: user?.username || user?.first_name || 'Anonymous'
     };
 
     setDeals([newDealItem, ...deals]);
     
-    // Reset form & close modal
-    setNewTitle('');
-    setNewStage('Pre-Seed');
-    setNewAmount('');
-    setNewLocation('');
-    setNewDescription('');
+    // Reset Form
+    setName('');
+    setStage('Pre-Seed');
+    setRate('');
+    setOriginCity('');
+    setHqCity('');
+    setDescription('');
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setIsUploading(false);
     setIsModalOpen(false);
   };
 
@@ -155,22 +181,16 @@ export default function App() {
     ? deals
     : deals.filter(deal => deal.stage === selectedStage);
 
-  // ---------------------------------------------------------------------------
-  // COMPULSORY LOGIN SCREEN (Active enforcement if unauthenticated)
-  // ---------------------------------------------------------------------------
   if (!user) {
     return (
       <div className="min-h-screen bg-[#070913] text-slate-100 flex items-center justify-center p-4 font-sans">
         <div className="w-full max-w-md bg-slate-900/80 border border-slate-800 rounded-3xl p-8 space-y-8 shadow-2xl text-center backdrop-blur-xl">
-          
           <div className="space-y-3">
             <div className="inline-flex p-3.5 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl text-indigo-400">
               <Building2 className="w-8 h-8" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-white">VenturePulse</h1>
-            <p className="text-sm text-slate-400">
-              Anonymized VC & Investor Network.
-            </p>
+            <p className="text-sm text-slate-400">Anonymized VC & Investor Network.</p>
           </div>
 
           <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 text-left space-y-2 text-xs text-slate-300">
@@ -183,7 +203,6 @@ export default function App() {
             </p>
           </div>
 
-          {/* Official Telegram Widget Injected Here */}
           <div className="flex justify-center items-center py-2 min-h-[48px]">
             <div id="telegram-widget-container"></div>
           </div>
@@ -192,49 +211,39 @@ export default function App() {
             <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Verified Investor</span>
             <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Vetted Deals</span>
           </div>
-
         </div>
       </div>
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // MAIN PLATFORM INTERFACE (Rendered once authenticated)
-  // ---------------------------------------------------------------------------
   return (
     <div className="min-h-screen bg-[#070913] text-slate-100 font-sans p-6 space-y-6">
-      {/* Top Header Navigation */}
       <header className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800/60">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-indigo-600/20 border border-indigo-500/30 rounded-xl text-indigo-400">
             <Building2 className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-              VenturePulse
-            </h1>
+            <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">VenturePulse</h1>
             <p className="text-xs text-slate-400 font-medium">Anonymized VC & Investor Network</p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Role Display: Admin Switcher vs Locked Investor Badge */}
           {isAdmin ? (
             <div className="flex items-center bg-slate-900/80 border border-indigo-500/30 rounded-xl p-1 text-xs font-semibold">
               <span className="px-3 text-indigo-400 flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5" /> Admin Mode:
               </span>
-              {(['Investor', 'Vc', 'Business', 'Admin'] as const).map((role) => (
+              {(['Investor', 'Vc', 'Business', 'Admin'] as const).map((r) => (
                 <button
-                  key={role}
-                  onClick={() => setSelectedRole(role)}
+                  key={r}
+                  onClick={() => setSelectedRole(r)}
                   className={`px-3 py-1.5 rounded-lg transition-all ${
-                    selectedRole === role
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white'
+                    selectedRole === r ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  {role}
+                  {r}
                 </button>
               ))}
             </div>
@@ -249,13 +258,11 @@ export default function App() {
             <RefreshCw className="w-4 h-4" />
           </button>
 
-          {/* User Badge showing verified Telegram Handle */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-indigo-300">
             <Send className="w-3.5 h-3.5 text-indigo-400" />
             <span>@{user.username || user.first_name}</span>
           </div>
 
-          {/* Logout Button */}
           <button
             onClick={handleLogout}
             title="Log out"
@@ -266,7 +273,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Permissions Banner & Share Button */}
       <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3 text-sm text-slate-300">
           <ShieldAlert className="w-5 h-5 text-indigo-400 shrink-0" />
@@ -288,24 +294,22 @@ export default function App() {
         </button>
       </div>
 
-      {/* Stage Filter Tab Bar */}
       <div className="flex flex-wrap items-center gap-2 pt-2">
-        {['All', 'Pre-Seed', 'Seed', 'Series A', 'Series B', 'Series C', 'Others'].map((stage) => (
+        {['All', 'Pre-Seed', 'Seed', 'Series A', 'Series B', 'Series C', 'Others'].map((s) => (
           <button
-            key={stage}
-            onClick={() => setSelectedStage(stage)}
+            key={s}
+            onClick={() => setSelectedStage(s)}
             className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
-              selectedStage === stage
+              selectedStage === s
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                 : 'bg-slate-900/80 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
             }`}
           >
-            {stage}
+            {s}
           </button>
         ))}
       </div>
 
-      {/* Deals Feed Grid */}
       {filteredDeals.length === 0 ? (
         <div className="border border-slate-800/80 bg-slate-900/30 rounded-2xl p-16 text-center text-slate-400 font-medium">
           No investment opportunities found for this stage.
@@ -315,9 +319,14 @@ export default function App() {
           {filteredDeals.map((deal) => (
             <div
               key={deal.id}
-              className="border border-slate-800/80 bg-slate-900/50 hover:border-slate-700 p-6 rounded-2xl space-y-4 transition flex flex-col justify-between"
+              className="border border-slate-800/80 bg-slate-900/50 hover:border-slate-700 p-6 rounded-2xl space-y-4 transition flex flex-col justify-between overflow-hidden"
             >
               <div className="space-y-3">
+                {deal.imageUrl && (
+                  <div className="h-40 w-full overflow-hidden rounded-xl bg-slate-950 border border-slate-800">
+                    <img src={deal.imageUrl} alt={deal.name} className="h-full w-full object-cover" />
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="inline-block text-xs font-semibold px-2.5 py-1 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                     {deal.stage}
@@ -328,23 +337,28 @@ export default function App() {
                     </span>
                   )}
                 </div>
-                <h3 className="text-lg font-bold text-white tracking-tight">{deal.title}</h3>
+                <h3 className="text-lg font-bold text-white tracking-tight">{deal.name}</h3>
                 <p className="text-sm text-slate-400 leading-relaxed">{deal.description}</p>
               </div>
 
-              <div className="text-xs text-slate-500 flex items-center justify-between pt-4 border-t border-slate-800/60 font-medium">
-                <span>Target: <strong className="text-slate-300">{deal.amountNeeded}</strong></span>
-                <span className="text-slate-400">{deal.location}</span>
+              <div className="space-y-2 pt-4 border-t border-slate-800/60 text-xs font-medium text-slate-400">
+                <div className="flex items-center justify-between">
+                  <span>Rate: <strong className="text-slate-200">{deal.rate}</strong></span>
+                  <span className="text-indigo-400 font-semibold">HQ: {deal.hqCity}</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <span>Origin: {deal.originCity}</span>
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* NEW LISTING MODAL */}
+      {/* MODAL FORM WITH UPDATED PARAMETERS */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6 shadow-2xl">
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <PlusCircle className="w-5 h-5 text-indigo-400" />
@@ -360,23 +374,23 @@ export default function App() {
 
             <form onSubmit={handleCreateListing} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Opportunity Title</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Name</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Cross-Border Payments Infrastructure"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Stage</label>
                   <select
-                    value={newStage}
-                    onChange={(e) => setNewStage(e.target.value)}
+                    value={stage}
+                    onChange={(e) => setStage(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                   >
                     {['Pre-Seed', 'Seed', 'Series A', 'Series B', 'Series C', 'Others'].map((st) => (
@@ -386,25 +400,39 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Target Amount</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Rate (per investment)</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. $1.5M"
-                    value={newAmount}
-                    onChange={(e) => setNewAmount(e.target.value)}
+                    placeholder="e.g. $50,000 / unit"
+                    value={rate}
+                    onChange={(e) => setRate(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Country of Origin (City)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Ho Chi Minh City"
+                    value={originCity}
+                    onChange={(e) => setOriginCity(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Location</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">HQ Location (City)</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Singapore"
-                    value={newLocation}
-                    onChange={(e) => setNewLocation(e.target.value)}
+                    value={hqCity}
+                    onChange={(e) => setHqCity(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>
@@ -416,10 +444,41 @@ export default function App() {
                   required
                   rows={3}
                   placeholder="Provide brief details about the company, market traction, or revenue infrastructure..."
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
                 />
+              </div>
+
+              {/* PHOTO UPLOAD FIELD */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Opportunity Photo / Banner</label>
+                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-800 border-dashed rounded-2xl bg-slate-950 hover:border-indigo-500/50 transition">
+                  {previewUrl ? (
+                    <div className="relative w-full space-y-2 text-center">
+                      <img src={previewUrl} alt="Preview" className="max-h-36 mx-auto rounded-xl object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedFile(null); setPreviewUrl(null); }}
+                        className="text-xs text-rose-400 hover:underline"
+                      >
+                        Remove Photo
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-1 text-center">
+                      <ImageIcon className="mx-auto h-8 w-8 text-slate-500" />
+                      <div className="flex text-xs text-slate-400">
+                        <label className="relative cursor-pointer rounded-md font-semibold text-indigo-400 hover:text-indigo-300 focus-within:outline-none">
+                          <span>Upload a photo</span>
+                          <input type="file" accept="image/*" onChange={handleFileChange} className="sr-only" />
+                        </label>
+                        <p className="pl-1">or drag and drop</p>
+                      </div>
+                      <p className="text-[10px] text-slate-500">PNG, JPG, WEBP up to 10MB (Stored via Cloudflare R2)</p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
@@ -432,9 +491,10 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl transition shadow-lg shadow-indigo-600/20"
+                  disabled={isUploading}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl transition shadow-lg shadow-indigo-600/20 disabled:opacity-50"
                 >
-                  Publish Deal
+                  {isUploading ? 'Uploading Image...' : 'Publish Deal'}
                 </button>
               </div>
             </form>
