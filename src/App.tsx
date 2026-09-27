@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, RefreshCw, Send, PlusCircle, ShieldAlert, LogOut, Lock, CheckCircle2, ShieldCheck, X, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { Building2, RefreshCw, Send, PlusCircle, ShieldAlert, LogOut, Lock, CheckCircle2, ShieldCheck, X, Image as ImageIcon, Loader2, Trash2 } from 'lucide-react';
 
 interface User {
   id: string;
@@ -35,6 +35,7 @@ export default function App() {
   const [selectedStage, setSelectedStage] = useState<string>('All');
   const [deals, setDeals] = useState<Deal[]>([]);
   const [isLoadingDeals, setIsLoadingDeals] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -52,7 +53,6 @@ export default function App() {
 
   const isAdmin = user ? ADMIN_HANDLES.includes(user.username) : false;
 
-  // Load saved session
   useEffect(() => {
     const savedUser = localStorage.getItem('vp_user');
     if (savedUser) {
@@ -62,7 +62,6 @@ export default function App() {
     }
   }, []);
 
-  // Set up Telegram widget callback
   useEffect(() => {
     window.onTelegramAuth = (telegramUser: User) => {
       setUser(telegramUser);
@@ -71,7 +70,6 @@ export default function App() {
     };
   }, []);
 
-  // Inject Telegram widget
   useEffect(() => {
     if (!user) {
       const container = document.getElementById('telegram-widget-container');
@@ -89,7 +87,6 @@ export default function App() {
     }
   }, [user]);
 
-  // Fetch deals from Cloudflare D1 backend API
   const fetchDeals = async () => {
     setIsLoadingDeals(true);
     try {
@@ -98,7 +95,7 @@ export default function App() {
         const data = await res.json();
         setDeals(data);
       } else {
-        console.error('Failed to fetch deals from Cloudflare D1 API');
+        console.error('Failed to fetch deals');
       }
     } catch (err) {
       console.error('Error fetching deals:', err);
@@ -152,10 +149,7 @@ export default function App() {
       });
 
       if (res.ok) {
-        // Refetch updated list directly from D1 Database
         await fetchDeals();
-
-        // Reset Form
         setName('');
         setStage('Pre-Seed');
         setRate('');
@@ -175,6 +169,28 @@ export default function App() {
       alert('Error publishing opportunity. Check network log.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteDeal = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this opportunity?')) return;
+
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/deals?id=${id}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        setDeals((prev) => prev.filter((d) => d.id !== id));
+      } else {
+        alert('Failed to delete opportunity.');
+      }
+    } catch (err) {
+      console.error('Error deleting deal:', err);
+      alert('Error deleting opportunity.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -329,7 +345,7 @@ export default function App() {
           {filteredDeals.map((deal) => (
             <div
               key={deal.id}
-              className="border border-slate-800/80 bg-slate-900/50 hover:border-slate-700 p-6 rounded-2xl space-y-4 transition flex flex-col justify-between overflow-hidden"
+              className="border border-slate-800/80 bg-slate-900/50 hover:border-slate-700 p-6 rounded-2xl space-y-4 transition flex flex-col justify-between overflow-hidden relative group"
             >
               <div className="space-y-3">
                 {deal.imageUrl && (
@@ -341,11 +357,27 @@ export default function App() {
                   <span className="inline-block text-xs font-semibold px-2.5 py-1 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                     {deal.stage}
                   </span>
-                  {deal.postedBy && (
-                    <span className="text-[11px] font-mono text-slate-500">
-                      via @{deal.postedBy}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {deal.postedBy && (
+                      <span className="text-[11px] font-mono text-slate-500">
+                        via @{deal.postedBy}
+                      </span>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleDeleteDeal(deal.id)}
+                        disabled={deletingId === deal.id}
+                        title="Delete Opportunity"
+                        className="p-1 text-slate-500 hover:text-rose-400 transition rounded-lg hover:bg-rose-950/40"
+                      >
+                        {deletingId === deal.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <h3 className="text-lg font-bold text-white tracking-tight">{deal.name}</h3>
                 <p className="text-sm text-slate-400 leading-relaxed">{deal.description}</p>
