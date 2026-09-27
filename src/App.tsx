@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, RefreshCw, Send, PlusCircle, ShieldAlert, LogOut, Lock, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { Building2, RefreshCw, Send, PlusCircle, ShieldAlert, LogOut, Lock, CheckCircle2, ShieldCheck, X } from 'lucide-react';
 
 interface User {
   id: string;
@@ -16,6 +16,7 @@ interface Deal {
   description: string;
   amountNeeded: string;
   location: string;
+  postedBy?: string;
 }
 
 // Global interface for Telegram window callback
@@ -63,6 +64,14 @@ export default function App() {
   const [selectedRole, setSelectedRole] = useState<'Investor' | 'Vc' | 'Business' | 'Admin'>('Investor');
   const [selectedStage, setSelectedStage] = useState<string>('All');
   const [deals, setDeals] = useState<Deal[]>(INITIAL_DEALS);
+  
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newStage, setNewStage] = useState('Pre-Seed');
+  const [newAmount, setNewAmount] = useState('');
+  const [newLocation, setNewLocation] = useState('');
+  const [newDescription, setNewDescription] = useState('');
 
   // Check if current user is an Admin
   const isAdmin = user ? ADMIN_HANDLES.includes(user.username) : false;
@@ -117,6 +126,31 @@ export default function App() {
     localStorage.removeItem('vp_user');
   };
 
+  const handleCreateListing = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTitle || !newDescription || !newAmount || !newLocation) return;
+
+    const newDealItem: Deal = {
+      id: Date.now().toString(),
+      title: newTitle,
+      stage: newStage,
+      amountNeeded: newAmount,
+      location: newLocation,
+      description: newDescription,
+      postedBy: user?.username || user?.first_name || 'Anonymous'
+    };
+
+    setDeals([newDealItem, ...deals]);
+    
+    // Reset form & close modal
+    setNewTitle('');
+    setNewStage('Pre-Seed');
+    setNewAmount('');
+    setNewLocation('');
+    setNewDescription('');
+    setIsModalOpen(false);
+  };
+
   const filteredDeals = selectedStage === 'All'
     ? deals
     : deals.filter(deal => deal.stage === selectedStage);
@@ -145,7 +179,7 @@ export default function App() {
               <span>Investor Access Only</span>
             </div>
             <p className="text-slate-400 leading-relaxed">
-              Standard registration is restricted to Investors. VCs and Businesses seeking portal listings must submit details via an Admin.
+              Standard registration is restricted to Investors. Authenticate via Telegram to view and submit opportunities.
             </p>
           </div>
 
@@ -232,7 +266,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Permissions Banner & Action Button */}
+      {/* Permissions Banner & Share Button */}
       <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3 text-sm text-slate-300">
           <ShieldAlert className="w-5 h-5 text-indigo-400 shrink-0" />
@@ -240,14 +274,17 @@ export default function App() {
             {isAdmin ? (
               <><strong className="text-white">ADMIN PERMISSIONS:</strong> You can manage, post, and review deal submissions on behalf of VCs and Businesses.</>
             ) : (
-              <><strong className="text-white">INVESTOR ACCESS:</strong> View curated opportunities, verify deal details, and connect directly with verified deal leads.</>
+              <><strong className="text-white">INVESTOR NETWORK:</strong> Share vetted deals or discover anonymized opportunities directly within the community.</>
             )}
           </span>
         </div>
 
-        <button className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition shadow-lg shadow-indigo-600/20">
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition shadow-lg shadow-indigo-600/20"
+        >
           <PlusCircle className="w-4 h-4" />
-          <span>{isAdmin ? 'Post Deal (Admin)' : 'Submit Listing Application'}</span>
+          <span>Post New Opportunity</span>
         </button>
       </div>
 
@@ -281,9 +318,16 @@ export default function App() {
               className="border border-slate-800/80 bg-slate-900/50 hover:border-slate-700 p-6 rounded-2xl space-y-4 transition flex flex-col justify-between"
             >
               <div className="space-y-3">
-                <span className="inline-block text-xs font-semibold px-2.5 py-1 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  {deal.stage}
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="inline-block text-xs font-semibold px-2.5 py-1 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    {deal.stage}
+                  </span>
+                  {deal.postedBy && (
+                    <span className="text-[11px] font-mono text-slate-500">
+                      via @{deal.postedBy}
+                    </span>
+                  )}
+                </div>
                 <h3 className="text-lg font-bold text-white tracking-tight">{deal.title}</h3>
                 <p className="text-sm text-slate-400 leading-relaxed">{deal.description}</p>
               </div>
@@ -294,6 +338,107 @@ export default function App() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* NEW LISTING MODAL */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <PlusCircle className="w-5 h-5 text-indigo-400" />
+                Post Investment Opportunity
+              </h2>
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateListing} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Opportunity Title</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Cross-Border Payments Infrastructure"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Stage</label>
+                  <select
+                    value={newStage}
+                    onChange={(e) => setNewStage(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    {['Pre-Seed', 'Seed', 'Series A', 'Series B', 'Series C', 'Others'].map((st) => (
+                      <option key={st} value={st}>{st}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Target Amount</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. $1.5M"
+                    value={newAmount}
+                    onChange={(e) => setNewAmount(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Location</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Singapore"
+                    value={newLocation}
+                    onChange={(e) => setNewLocation(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Brief Description</label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="Provide brief details about the company, market traction, or revenue infrastructure..."
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl transition shadow-lg shadow-indigo-600/20"
+                >
+                  Publish Deal
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
