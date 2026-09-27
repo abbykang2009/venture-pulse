@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, RefreshCw, Send, PlusCircle, ShieldAlert, LogOut, Lock, CheckCircle2 } from 'lucide-react';
+import { Building2, RefreshCw, Send, PlusCircle, ShieldAlert, LogOut, Lock, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 interface User {
   id: string;
@@ -18,12 +18,18 @@ interface Deal {
   location: string;
 }
 
-// Declare Telegram callback interface on global window
+// Global interface for Telegram window callback
 declare global {
   interface Window {
     onTelegramAuth?: (user: User) => void;
   }
 }
+
+// LIST YOUR ADMIN TELEGRAM USERNAMES HERE (without the @ symbol)
+const ADMIN_HANDLES = [
+  'exhamstersg',
+  'EmilyCucCung'
+]; 
 
 const INITIAL_DEALS: Deal[] = [
   {
@@ -58,19 +64,33 @@ export default function App() {
   const [selectedStage, setSelectedStage] = useState<string>('All');
   const [deals, setDeals] = useState<Deal[]>(INITIAL_DEALS);
 
-  // Load persistent user session on mount
+  // Check if current user is an Admin
+  const isAdmin = user ? ADMIN_HANDLES.includes(user.username) : false;
+
+  // Load saved user session on mount
   useEffect(() => {
     const savedUser = localStorage.getItem('vp_user');
     if (savedUser) {
-      setUser(JSON.parse(savedUser));
+      const parsedUser: User = JSON.parse(savedUser);
+      setUser(parsedUser);
+      if (ADMIN_HANDLES.includes(parsedUser.username)) {
+        setSelectedRole('Admin');
+      } else {
+        setSelectedRole('Investor');
+      }
     }
   }, []);
 
-  // Set up Telegram widget global auth handler
+  // Global Telegram callback listener
   useEffect(() => {
     window.onTelegramAuth = (telegramUser: User) => {
       setUser(telegramUser);
       localStorage.setItem('vp_user', JSON.stringify(telegramUser));
+      if (ADMIN_HANDLES.includes(telegramUser.username)) {
+        setSelectedRole('Admin');
+      } else {
+        setSelectedRole('Investor');
+      }
     };
   }, []);
 
@@ -115,17 +135,17 @@ export default function App() {
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-white">VenturePulse</h1>
             <p className="text-sm text-slate-400">
-              Anonymized VC & Investor Network. Login required to view deals and participate.
+              Anonymized VC & Investor Network.
             </p>
           </div>
 
           <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 text-left space-y-2 text-xs text-slate-300">
             <div className="flex items-center gap-2 text-indigo-400 font-semibold">
               <Lock className="w-4 h-4" />
-              <span>Restricted Access</span>
+              <span>Investor Access Only</span>
             </div>
             <p className="text-slate-400 leading-relaxed">
-              To preserve deal confidentiality and network trust, all participants must authenticate via Telegram.
+              Standard registration is restricted to Investors. VCs and Businesses seeking portal listings must submit details via an Admin.
             </p>
           </div>
 
@@ -135,8 +155,8 @@ export default function App() {
           </div>
 
           <div className="flex items-center justify-center gap-4 text-xs text-slate-500 pt-2 border-t border-slate-800/60">
-            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Verified Investors</span>
-            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Anonymous Handles</span>
+            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Verified Investor</span>
+            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Vetted Deals</span>
           </div>
 
         </div>
@@ -164,23 +184,32 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Role Switcher */}
-          <div className="flex items-center bg-slate-900/80 border border-slate-800 rounded-xl p-1 text-xs font-semibold">
-            <span className="px-3 text-slate-400">Role:</span>
-            {(['Investor', 'Vc', 'Business', 'Admin'] as const).map((role) => (
-              <button
-                key={role}
-                onClick={() => setSelectedRole(role)}
-                className={`px-3 py-1.5 rounded-lg transition-all ${
-                  selectedRole === role
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {role}
-              </button>
-            ))}
-          </div>
+          {/* Role Display: Admin Switcher vs Locked Investor Badge */}
+          {isAdmin ? (
+            <div className="flex items-center bg-slate-900/80 border border-indigo-500/30 rounded-xl p-1 text-xs font-semibold">
+              <span className="px-3 text-indigo-400 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" /> Admin Mode:
+              </span>
+              {(['Investor', 'Vc', 'Business', 'Admin'] as const).map((role) => (
+                <button
+                  key={role}
+                  onClick={() => setSelectedRole(role)}
+                  className={`px-3 py-1.5 rounded-lg transition-all ${
+                    selectedRole === role
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {role}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/80 border border-slate-800 rounded-xl text-xs font-semibold text-slate-300">
+              <span className="text-slate-500">Role:</span>
+              <span className="text-indigo-400 font-bold">Investor</span>
+            </div>
+          )}
 
           <button className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white transition">
             <RefreshCw className="w-4 h-4" />
@@ -203,18 +232,22 @@ export default function App() {
         </div>
       </header>
 
-      {/* Permissions Banner & Share Button */}
+      {/* Permissions Banner & Action Button */}
       <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3 text-sm text-slate-300">
           <ShieldAlert className="w-5 h-5 text-indigo-400 shrink-0" />
           <span>
-            <strong className="text-white">Current Permissions ({selectedRole.toUpperCase()}):</strong> Post freely without approval. Exclusive rights to Verify or Contest deals.
+            {isAdmin ? (
+              <><strong className="text-white">ADMIN PERMISSIONS:</strong> You can manage, post, and review deal submissions on behalf of VCs and Businesses.</>
+            ) : (
+              <><strong className="text-white">INVESTOR ACCESS:</strong> View curated opportunities, verify deal details, and connect directly with verified deal leads.</>
+            )}
           </span>
         </div>
 
         <button className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition shadow-lg shadow-indigo-600/20">
           <PlusCircle className="w-4 h-4" />
-          <span>Share Opportunity</span>
+          <span>{isAdmin ? 'Post Deal (Admin)' : 'Submit Listing Application'}</span>
         </button>
       </div>
 
