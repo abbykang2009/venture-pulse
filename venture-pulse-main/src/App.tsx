@@ -1,622 +1,215 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Building2,
-  RefreshCw,
-  Send,
-  PlusCircle,
-  ShieldAlert,
-  LogOut,
-  Lock,
-  CheckCircle2,
-  ShieldCheck,
-  X,
-  Image as ImageIcon,
-  Loader2,
-  Trash2,
-  MapPin,
-  CheckCircle,
-  AlertTriangle,
-  HelpCircle,
-  MessageSquare,
-  ThumbsUp,
-  ThumbsDown,
-  Globe,
-  TrendingUp,
-  Coins,
-  User as UserIcon,
-  Bell,
-  Users,
-  Briefcase,
-  Layers,
-  Lock as CircleLock
+import { 
+  PlusCircle, 
+  MapPin, 
+  Building2, 
+  DollarSign, 
+  ChevronLeft, 
+  ChevronRight, 
+  X, 
+  ShieldCheck, 
+  Sparkles,
+  Play
 } from 'lucide-react';
-
-interface User {
-  id: string;
-  username: string | null;
-  firstName: string;
-  lastName: string | null;
-  photoUrl: string | null;
-  isAdmin: boolean;
-}
-
-interface TelegramAuthData {
-  id: number;
-  first_name: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-  auth_date: number;
-  hash: string;
-}
-
-interface Comment {
-  id: string;
-  author: string;
-  text: string;
-  createdAt: number;
-}
 
 interface Deal {
   id: string;
   name: string;
+  type: string; // 'Solo' | 'Agency'
+  origin: string;
+  current_location: string;
   stage: string;
-  description: string;
-  rate: string;
-  originCity: string;
-  hqCity: string;
-  imageUrl?: string;
-  postedBy?: string;
-  listingType?: 'Business' | 'VC';
-  verifications?: number;
-  disputes?: number;
-  myVote?: 'verify' | 'dispute' | null;
-  isMine?: boolean;
-  comments?: Comment[];
+  budget: number;
+  currency: string;
+  description?: string;
+  media_urls?: string[];
+  created_by_admin: boolean;
+  user_name?: string;
 }
 
-declare global {
-  interface Window {
-    onTelegramAuth?: (user: TelegramAuthData) => void;
-  }
-}
-
-const displayName = (u: User) => (u.username ? `@${u.username}` : u.firstName || 'Investor');
-
-function getVerificationStatus(verifications: number = 0, disputes: number = 0) {
-  const diff = verifications - disputes;
-  if (diff >= 2) {
-    return { label: 'Verified', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40', icon: CheckCircle };
-  }
-  if (disputes - verifications >= 2) {
-    return { label: 'Disputed', color: 'bg-rose-500/20 text-rose-400 border-rose-500/40', icon: AlertTriangle };
-  }
-  return { label: 'Unverified', color: 'bg-amber-500/20 text-amber-400 border-amber-500/40', icon: HelpCircle };
-}
+const ORIGIN_OPTIONS = ['Thailand', 'Vietnam', 'China', 'Malaysia', 'Singapore', 'Others'];
+const LOCATION_OPTIONS = ['Johor Bahru (JB)', 'Kuala Lumpur (KL)', 'Singapore', 'Hanoi', 'Ho Chi Minh (HCM)', 'Others'];
+const STAGE_OPTIONS = ['Type 1', 'Type 2', 'Type 3', 'Type 4', 'Others'];
+const CURRENCY_OPTIONS = ['MYR', 'SGD', 'VND', 'THB', 'RMB', 'USD'];
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [authChecked, setAuthChecked] = useState(false);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [voteError, setVoteError] = useState<string | null>(null);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
-  const [selectedStage, setSelectedStage] = useState<string>('All');
   const [deals, setDeals] = useState<Deal[]>([]);
-  const [isLoadingDeals, setIsLoadingDeals] = useState(true);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  // Profile Modal State
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [profileTab, setProfileTab] = useState<'myPosts' | 'notifications' | 'circles'>('myPosts');
-
-  // Selected Deal Detail Modal
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
-  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
-  const [newComment, setNewComment] = useState('');
-  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
-
-  // Opportunity Creation Form
+  const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [stage, setStage] = useState('Pre-Seed');
-  const [rate, setRate] = useState('');
-  const [originCity, setOriginCity] = useState('');
-  const [hqCity, setHqCity] = useState('');
-  const [description, setDescription] = useState('');
-  const [listingType, setListingType] = useState<'Business' | 'VC'>('Business');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false); // Admin toggle for demo/posting
 
-  const isUserAdmin = user?.isAdmin ?? false;
+  // Form State
+  const [formData, setFormData] = useState({
+    name: '',
+    adminPostingType: 'Business', // 'Business' -> Solo, 'VC' -> Agency
+    origin: 'Singapore',
+    current_location: 'Singapore',
+    stage: 'Type 1',
+    budget: '',
+    currency: 'MYR',
+    description: '',
+    mediaFiles: [] as string[],
+  });
 
-  // Restore the session from the server-side cookie (not localStorage).
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch('/api/auth/me');
-        const data = res.ok ? await res.json() : { user: null };
-        if (!cancelled && data.user) {
-          setUser(data.user);
-          setIsAdminMode(!!data.user.isAdmin);
-        }
-      } catch (err) {
-        console.error('Error checking session:', err);
-      } finally {
-        if (!cancelled) setAuthChecked(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Telegram Login Widget: the server verifies Telegram's signature and sets the session cookie.
-  useEffect(() => {
-    if (user || !authChecked) return;
-
-    window.onTelegramAuth = async (tg) => {
-      setIsLoggingIn(true);
-      setLoginError(null);
-      try {
-        const res = await fetch('/api/auth/telegram', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(tg),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'Login failed');
-        setUser(data.user);
-        setIsAdminMode(!!data.user.isAdmin);
-      } catch (err: any) {
-        setLoginError(err.message || 'Login failed');
-      } finally {
-        setIsLoggingIn(false);
-      }
-    };
-
-    const container = document.getElementById('telegram-widget-container');
-    if (container && container.childNodes.length === 0) {
-      const script = document.createElement('script');
-      script.src = 'https://telegram.org/js/telegram-widget.js?22';
-      script.setAttribute('data-telegram-login', 'VenturePulseAuthBot');
-      script.setAttribute('data-size', 'large');
-      script.setAttribute('data-radius', '12');
-      script.setAttribute('data-onauth', 'onTelegramAuth(user)');
-      script.setAttribute('data-request-access', 'write');
-      script.async = true;
-      container.appendChild(script);
+  const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const files = Array.from(e.target.files);
+    
+    // Up to 9 photos/videos limit
+    if (formData.mediaFiles.length + files.length > 9) {
+      alert("You can upload a maximum of 9 media files.");
+      return;
     }
-  }, [user, authChecked]);
 
-  const handleUnauthorized = () => {
-    setUser(null);
-    setIsAdminMode(false);
-    setDeals([]);
-    setSelectedDeal(null);
-    setIsProfileOpen(false);
+    const newUrls = files.map(file => URL.createObjectURL(file));
+    setFormData(prev => ({ ...prev, mediaFiles: [...prev.mediaFiles, ...newUrls] }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Map Admin selections (Business -> Solo, VC -> Agency)
+    let dealType = 'Solo';
+    if (isAdmin) {
+      dealType = formData.adminPostingType === 'Business' ? 'Solo' : 'Agency';
+    }
+
+    const newDeal: Deal = {
+      id: Date.now().toString(),
+      name: formData.name,
+      type: dealType,
+      origin: formData.origin,
+      current_location: formData.current_location,
+      stage: formData.stage,
+      budget: Number(formData.budget),
+      currency: formData.currency,
+      description: formData.description,
+      media_urls: formData.mediaFiles,
+      created_by_admin: isAdmin,
+    };
+
+    setDeals([newDeal, ...deals]);
     setIsModalOpen(false);
+    // Reset Form
+    setFormData({
+      name: '',
+      adminPostingType: 'Business',
+      origin: 'Singapore',
+      current_location: 'Singapore',
+      stage: 'Type 1',
+      budget: '',
+      currency: 'MYR',
+      description: '',
+      mediaFiles: [],
+    });
   };
 
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-    } catch (err) {
-      console.error('Error logging out:', err);
-    }
-    handleUnauthorized();
+  const isVideoUrl = (url: string) => {
+    return url.includes('video') || url.endsWith('.mp4') || url.endsWith('.webm');
   };
-
-  const fetchDeals = async () => {
-    setIsLoadingDeals(true);
-    try {
-      const res = await fetch('/api/deals');
-      if (res.status === 401) return handleUnauthorized();
-      if (res.ok) {
-        const data = await res.json();
-        setDeals(data);
-      }
-    } catch (err) {
-      console.error('Error fetching deals:', err);
-    } finally {
-      setIsLoadingDeals(false);
-    }
-  };
-
-  const fetchDealDetail = async (id: string) => {
-    setIsLoadingDetail(true);
-    try {
-      const res = await fetch(`/api/deals?id=${id}`);
-      if (res.status === 401) return handleUnauthorized();
-      if (res.ok) {
-        const data = await res.json();
-        setSelectedDeal(data);
-      }
-    } catch (err) {
-      console.error('Error fetching deal details:', err);
-    } finally {
-      setIsLoadingDetail(false);
-    }
-  };
-
-  useEffect(() => {
-    if (user) {
-      fetchDeals();
-    }
-  }, [user]);
-
-  const handleVote = async (voteType: 'verify' | 'dispute') => {
-    if (!selectedDeal || !user) return;
-
-    setVoteError(null);
-    try {
-      const res = await fetch('/api/deals?action=vote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dealId: selectedDeal.id, voteType }),
-      });
-
-      if (res.status === 401) return handleUnauthorized();
-      if (res.ok) {
-        fetchDealDetail(selectedDeal.id);
-        fetchDeals();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setVoteError(data.error || 'Could not record your vote.');
-      }
-    } catch (err) {
-      console.error('Error submitting vote:', err);
-    }
-  };
-
-  const handleAddComment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedDeal || !newComment.trim() || !user) return;
-
-    setIsSubmittingComment(true);
-    try {
-      const res = await fetch('/api/deals?action=comment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dealId: selectedDeal.id, text: newComment }),
-      });
-
-      if (res.status === 401) return handleUnauthorized();
-      if (res.ok) {
-        setNewComment('');
-        fetchDealDetail(selectedDeal.id);
-      }
-    } catch (err) {
-      console.error('Error posting comment:', err);
-    } finally {
-      setIsSubmittingComment(false);
-    }
-  };
-
-  const handleCreateListing = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name || !description || !rate || !originCity || !hqCity) return;
-
-    setIsSubmitting(true);
-    setCreateError(null);
-    try {
-      const formData = new FormData();
-      formData.append('name', name);
-      formData.append('stage', stage);
-      formData.append('rate', rate);
-      formData.append('originCity', originCity);
-      formData.append('hqCity', hqCity);
-      formData.append('description', description);
-      formData.append('listingType', isAdminMode ? listingType : 'Business');
-
-      if (selectedFile) {
-        formData.append('file', selectedFile);
-      }
-
-      const res = await fetch('/api/deals', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setCreateError(data.error || 'Could not publish this deal.');
-      } else {
-        await fetchDeals();
-        setName('');
-        setStage('Pre-Seed');
-        setRate('');
-        setOriginCity('');
-        setHqCity('');
-        setDescription('');
-        setSelectedFile(null);
-        setPreviewUrl(null);
-        setIsModalOpen(false);
-      }
-    } catch (error) {
-      console.error('Error saving deal:', error);
-      setCreateError('Network error. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeleteDeal = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (!window.confirm('Are you sure you want to delete this opportunity?')) return;
-
-    setDeletingId(id);
-    try {
-      const res = await fetch(`/api/deals?id=${id}`, { method: 'DELETE' });
-      if (res.status === 401) return handleUnauthorized();
-      if (res.ok) {
-        setDeals((prev) => prev.filter((d) => d.id !== id));
-        if (selectedDeal?.id === id) setSelectedDeal(null);
-      }
-    } catch (err) {
-      console.error('Error deleting deal:', err);
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const myPostedDeals = deals.filter((d) => d.isMine);
-
-  const filteredDeals = selectedStage === 'All'
-    ? deals
-    : deals.filter((deal) => deal.stage === selectedStage);
-
-  if (!authChecked) {
-    return (
-      <div className="min-h-screen bg-[#070913] flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-[#070913] text-slate-100 flex items-center justify-center p-4 font-sans">
-        <div className="w-full max-w-md bg-slate-900/80 border border-slate-800 rounded-3xl p-8 space-y-8 shadow-2xl text-center backdrop-blur-xl">
-          <div className="space-y-3">
-            <div className="inline-flex p-3.5 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl text-indigo-400">
-              <Building2 className="w-8 h-8" />
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">VenturePulse</h1>
-            <p className="text-sm text-slate-400">Anonymized Opportunities Network</p>
-          </div>
-
-          <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 text-left space-y-2 text-xs text-slate-300">
-            <div className="flex items-center gap-2 text-indigo-400 font-semibold">
-              <Lock className="w-4 h-4" />
-              <span>Investor Access Only</span>
-            </div>
-            <p className="text-slate-400 leading-relaxed">
-              Standard registration is restricted to Investors. Authenticate via Telegram to view and submit opportunities.
-            </p>
-          </div>
-
-          <div className="flex justify-center items-center py-2 min-h-[48px]">
-            {isLoggingIn ? (
-              <span className="flex items-center gap-2 text-sm text-slate-400">
-                <Loader2 className="w-4 h-4 animate-spin text-indigo-500" /> Verifying with Telegram...
-              </span>
-            ) : (
-              <div id="telegram-widget-container"></div>
-            )}
-          </div>
-
-          {loginError && (
-            <p className="text-xs text-rose-400 bg-rose-950/30 border border-rose-900/50 rounded-xl px-3 py-2">
-              {loginError}
-            </p>
-          )}
-
-          <div className="flex items-center justify-center gap-4 text-xs text-slate-500 pt-2 border-t border-slate-800/60">
-            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Verified Network</span>
-            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Vetted Deals</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-[#070913] text-slate-100 font-sans p-6 space-y-6 max-w-7xl mx-auto">
-      
-      {/* HEADER SECTION */}
-      <header className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800/60">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-indigo-600/20 border border-indigo-500/30 rounded-xl text-indigo-400">
-            <Building2 className="w-6 h-6" />
+    <div className="min-h-screen bg-[#0a0a0a] text-zinc-100 flex flex-col font-sans">
+      {/* Header */}
+      <header className="border-b border-zinc-800 bg-[#121212]/80 backdrop-blur sticky top-0 z-40">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-amber-400" />
+            <h1 className="text-xl font-bold tracking-widest text-amber-400 uppercase font-serif">
+              Black Book
+            </h1>
           </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">VenturePulse</h1>
-            <p className="text-xs text-slate-400 font-medium">Anonymized Opportunities Network</p>
+          
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsAdmin(!isAdmin)}
+              className={`text-xs px-3 py-1 rounded-full border transition-all ${
+                isAdmin 
+                  ? 'bg-amber-400/10 border-amber-400 text-amber-400' 
+                  : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+              }`}
+            >
+              {isAdmin ? 'Admin Mode' : 'User Mode'}
+            </button>
+
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-black font-medium text-sm px-4 py-2 rounded-lg transition-all"
+            >
+              <PlusCircle className="w-4 h-4" />
+              New Opportunity
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* USER / ADMIN MODE TOGGLE */}
-          {isUserAdmin && (
-            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs font-medium">
-              <button
-                onClick={() => setIsAdminMode(false)}
-                className={`px-3 py-1.5 rounded-lg transition-all ${
-                  !isAdminMode ? 'bg-indigo-600 text-white shadow-sm font-semibold' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                User
-              </button>
-              <button
-                onClick={() => setIsAdminMode(true)}
-                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${
-                  isAdminMode ? 'bg-indigo-600 text-white shadow-sm font-semibold' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5" /> Admin
-              </button>
-            </div>
-          )}
-
-          <button
-            onClick={fetchDeals}
-            title="Refresh Feed"
-            className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white transition"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoadingDeals ? 'animate-spin' : ''}`} />
-          </button>
-
-          {/* TELEGRAM USER PROFILE BUTTON */}
-          <button
-            onClick={() => setIsProfileOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/50 rounded-xl text-xs font-mono text-indigo-300 transition"
-          >
-            {user.photoUrl ? (
-              <img src={user.photoUrl} alt="" referrerPolicy="no-referrer" className="w-5 h-5 rounded-full object-cover" />
-            ) : (
-              <Send className="w-3.5 h-3.5 text-indigo-400" />
-            )}
-            <span>{displayName(user)}</span>
-          </button>
-
-          <button
-            onClick={handleLogout}
-            title="Log out"
-            className="p-2 bg-slate-900 hover:bg-rose-950/40 border border-slate-800 hover:border-rose-800/60 text-slate-400 hover:text-rose-400 rounded-xl transition"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
         </div>
       </header>
 
-      {/* BANNER NOTICE */}
-      <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3 text-sm text-slate-300">
-          <ShieldAlert className="w-5 h-5 text-indigo-400 shrink-0" />
-          <span>
-            {isAdminMode ? (
-              <><strong className="text-white">ADMIN MODE ENABLED:</strong> You can post on behalf of Businesses or VCs, and manage opportunity listings.</>
-            ) : (
-              <><strong className="text-white">NETWORK FEED:</strong> Click any card to inspect full details, community verification scores, or post notes.</>
-            )}
-          </span>
-        </div>
-
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition shadow-lg shadow-indigo-600/20"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>Post New Opportunity</span>
-        </button>
-      </div>
-
-      {/* STAGE FILTERS */}
-      <div className="flex flex-wrap items-center gap-2 pt-2">
-        {['All', 'Pre-Seed', 'Seed', 'Series A', 'Series B', 'Series C', 'Others'].map((s) => (
-          <button
-            key={s}
-            onClick={() => setSelectedStage(s)}
-            className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
-              selectedStage === s
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                : 'bg-slate-900/80 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
-            }`}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-
-      {/* OPPORTUNITY CARDS (1x1 SQUARE) */}
-      {isLoadingDeals ? (
-        <div className="border border-slate-800/80 bg-slate-900/30 rounded-2xl p-16 flex flex-col items-center justify-center gap-3 text-slate-400 font-medium">
-          <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
-          <span>Loading opportunities...</span>
-        </div>
-      ) : filteredDeals.length === 0 ? (
-        <div className="border border-slate-800/80 bg-slate-900/30 rounded-2xl p-16 text-center text-slate-400 font-medium">
-          No opportunities found for this stage.
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 pt-2">
-          {filteredDeals.map((deal) => {
-            const status = getVerificationStatus(deal.verifications, deal.disputes);
-            const StatusIcon = status.icon;
-            const isVcListing = deal.listingType === 'VC';
+      {/* Main Content / Deal Grid */}
+      <main className="max-w-5xl mx-auto px-4 py-8 flex-1 w-full">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {deals.map((deal) => {
+            // Ribbon only shown if created by admin
+            const showRibbon = deal.created_by_admin;
+            const ribbonLabel = deal.type === 'Solo' ? 'Business' : 'VC';
 
             return (
               <div
                 key={deal.id}
                 onClick={() => {
                   setSelectedDeal(deal);
-                  fetchDealDetail(deal.id);
+                  setCurrentMediaIndex(0);
                 }}
-                className="group relative aspect-square rounded-2xl overflow-hidden bg-slate-900 border border-slate-800 hover:border-indigo-500/60 cursor-pointer transition-all shadow-md hover:shadow-2xl hover:scale-[1.02]"
+                className="relative bg-[#121212] border border-zinc-800 hover:border-amber-500/40 rounded-xl overflow-hidden cursor-pointer transition-all hover:shadow-lg hover:shadow-amber-500/5 group"
               >
-                {/* Background Image / Placeholder */}
-                {deal.imageUrl ? (
-                  <img
-                    src={deal.imageUrl}
-                    alt={deal.name}
-                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                  />
-                ) : (
-                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 flex items-center justify-center">
-                    <Building2 className="w-12 h-12 text-slate-700 group-hover:text-indigo-400/50 transition" />
+                {/* Admin Ribbon */}
+                {showRibbon && (
+                  <div className="absolute top-3 right-3 z-10 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-semibold text-xs px-2.5 py-1 rounded-full shadow-md flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" />
+                    {ribbonLabel}
                   </div>
                 )}
 
-                {/* Dark Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent opacity-90 group-hover:opacity-80 transition" />
-
-                {/* TYPE RIBBON / BADGE (Top-Right) */}
-                <div className="absolute top-3 right-3 z-10">
-                  <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border backdrop-blur-md shadow-md ${
-                    isVcListing 
-                      ? 'bg-purple-950/80 text-purple-300 border-purple-700/60' 
-                      : 'bg-blue-950/80 text-blue-300 border-blue-700/60'
-                  }`}>
-                    {isVcListing ? 'VC Deal' : 'Business'}
-                  </span>
-                </div>
-
-                {/* VERIFICATION BADGE & ADMIN DELETE (Top-Left) */}
-                <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5">
-                  <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border backdrop-blur-md ${status.color}`}>
-                    <StatusIcon className="w-3 h-3" />
-                    {status.label}
-                  </span>
-
-                  {isAdminMode && (
-                    <button
-                      onClick={(e) => handleDeleteDeal(e, deal.id)}
-                      disabled={deletingId === deal.id}
-                      title="Delete"
-                      className="p-1.5 bg-slate-950/80 hover:bg-rose-900/80 text-slate-400 hover:text-rose-300 rounded-lg border border-slate-800 backdrop-blur-md transition"
-                    >
-                      {deletingId === deal.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                    </button>
+                {/* Cover Image/Video */}
+                <div className="h-48 bg-zinc-900 relative overflow-hidden">
+                  {deal.media_urls && deal.media_urls.length > 0 ? (
+                    isVideoUrl(deal.media_urls[0]) ? (
+                      <div className="w-full h-full flex items-center justify-center bg-zinc-900">
+                        <Play className="w-8 h-8 text-amber-400" />
+                      </div>
+                    ) : (
+                      <img
+                        src={deal.media_urls[0]}
+                        alt={deal.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    )
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-zinc-600 text-sm">
+                      No Media
+                    </div>
                   )}
                 </div>
 
-                {/* Bottom Overlay Info */}
-                <div className="absolute bottom-0 inset-x-0 p-3.5 z-10 space-y-1">
-                  <span className="inline-block text-[10px] font-semibold text-indigo-300 uppercase tracking-wider">
-                    {deal.stage}
-                  </span>
-                  <h3 className="text-sm font-bold text-white truncate leading-tight group-hover:text-indigo-300 transition">
+                <div className="p-4 space-y-3">
+                  <h3 className="font-semibold text-lg text-zinc-100 group-hover:text-amber-400 transition-colors">
                     {deal.name}
                   </h3>
-                  <div className="flex items-center justify-between text-slate-400 text-xs pt-0.5">
-                    <span className="flex items-center gap-1 text-[11px] truncate">
-                      <MapPin className="w-3 h-3 text-indigo-400 shrink-0" />
-                      {deal.hqCity}
+
+                  <div className="grid grid-cols-2 gap-2 text-xs text-zinc-400">
+                    <div className="flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                      <span>{deal.origin}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Building2 className="w-3.5 h-3.5 text-amber-500" />
+                      <span>{deal.current_location}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-zinc-800 text-sm">
+                    <span className="text-zinc-400 text-xs">{deal.stage}</span>
+                    <span className="font-semibold text-amber-400">
+                      {deal.currency} {deal.budget.toLocaleString()}
                     </span>
                   </div>
                 </div>
@@ -624,146 +217,107 @@ export default function App() {
             );
           })}
         </div>
-      )}
+      </main>
 
-      {/* USER PROFILE & NOTIFICATIONS MODAL */}
-      {isProfileOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
-          <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative flex flex-col max-h-[85vh]">
-            
-            {/* Header */}
-            <div className="p-6 pb-4 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {user.photoUrl ? (
-                  <img src={user.photoUrl} alt="" referrerPolicy="no-referrer" className="w-12 h-12 rounded-2xl object-cover border border-indigo-500/30" />
+      {/* Detail Swipe View Drawer / Modal */}
+      {selectedDeal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-zinc-800 w-full max-w-sm rounded-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Media Gallery Header (Tinder Style) */}
+            <div className="relative h-96 bg-black flex items-center justify-center">
+              <button
+                onClick={() => setSelectedDeal(null)}
+                className="absolute top-3 right-3 z-20 bg-black/60 hover:bg-black text-white p-2 rounded-full border border-zinc-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              {/* Progress Bars for Media */}
+              {selectedDeal.media_urls && selectedDeal.media_urls.length > 1 && (
+                <div className="absolute top-3 inset-x-4 z-10 flex gap-1">
+                  {selectedDeal.media_urls.map((_, idx) => (
+                    <div
+                      key={idx}
+                      className={`h-1 flex-1 rounded-full transition-all ${
+                        idx === currentMediaIndex ? 'bg-amber-400' : 'bg-white/30'
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Active Media Display */}
+              {selectedDeal.media_urls && selectedDeal.media_urls.length > 0 ? (
+                isVideoUrl(selectedDeal.media_urls[currentMediaIndex]) ? (
+                  <video
+                    src={selectedDeal.media_urls[currentMediaIndex]}
+                    controls
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
-                  <div className="p-3 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl text-indigo-400">
-                    <UserIcon className="w-6 h-6" />
-                  </div>
-                )}
+                  <img
+                    src={selectedDeal.media_urls[currentMediaIndex]}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                )
+              ) : (
+                <div className="text-zinc-500 text-sm">No photos available</div>
+              )}
+
+              {/* Left/Right Swipe Nav Controls */}
+              {selectedDeal.media_urls && selectedDeal.media_urls.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setCurrentMediaIndex((prev) => Math.max(0, prev - 1))}
+                    disabled={currentMediaIndex === 0}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/40 hover:bg-black/80 rounded-full text-white disabled:opacity-0 transition-all"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() =>
+                      setCurrentMediaIndex((prev) =>
+                        Math.min(selectedDeal.media_urls!.length - 1, prev + 1)
+                      )
+                    }
+                    disabled={currentMediaIndex === selectedDeal.media_urls.length - 1}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/40 hover:bg-black/80 rounded-full text-white disabled:opacity-0 transition-all"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Deal Info Details */}
+            <div className="p-5 overflow-y-auto space-y-4">
+              <div className="flex justify-between items-start">
+                <h2 className="text-xl font-bold text-zinc-100">{selectedDeal.name}</h2>
+                <span className="text-amber-400 font-semibold text-base">
+                  {selectedDeal.currency} {selectedDeal.budget.toLocaleString()}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-xs text-zinc-300 bg-zinc-900/60 p-3 rounded-lg border border-zinc-800">
                 <div>
-                  <h2 className="text-lg font-bold text-white">{displayName(user)}</h2>
-                  <p className="text-xs text-slate-400">
-                    {[user.firstName, user.lastName].filter(Boolean).join(' ')} · Telegram ID <span className="font-mono">{user.id}</span>
-                  </p>
+                  <span className="text-zinc-500 block">Origin</span>
+                  <span className="font-medium text-zinc-200">{selectedDeal.origin}</span>
+                </div>
+                <div>
+                  <span className="text-zinc-500 block">Current Location</span>
+                  <span className="font-medium text-zinc-200">{selectedDeal.current_location}</span>
+                </div>
+                <div>
+                  <span className="text-zinc-500 block">Stage</span>
+                  <span className="font-medium text-zinc-200">{selectedDeal.stage}</span>
                 </div>
               </div>
-              <button
-                onClick={() => setIsProfileOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-xl bg-slate-800/60"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Profile Navigation Tabs */}
-            <div className="flex border-b border-slate-800 bg-slate-950/40 px-6">
-              <button
-                onClick={() => setProfileTab('myPosts')}
-                className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition ${
-                  profileTab === 'myPosts'
-                    ? 'border-indigo-500 text-indigo-400'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Briefcase className="w-4 h-4" /> My Submissions ({myPostedDeals.length})
-              </button>
-
-              <button
-                onClick={() => setProfileTab('notifications')}
-                className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition ${
-                  profileTab === 'notifications'
-                    ? 'border-indigo-500 text-indigo-400'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Bell className="w-4 h-4" /> Notifications
-              </button>
-
-              <button
-                onClick={() => setProfileTab('circles')}
-                className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition ${
-                  profileTab === 'circles'
-                    ? 'border-indigo-500 text-indigo-400'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Users className="w-4 h-4" /> Private Circles
-              </button>
-            </div>
-
-            {/* Profile Tab Contents */}
-            <div className="p-6 overflow-y-auto space-y-4 flex-1">
-              {profileTab === 'myPosts' && (
-                <div className="space-y-3">
-                  {myPostedDeals.length === 0 ? (
-                    <div className="text-center py-8 text-xs text-slate-500 border border-slate-800/80 rounded-2xl bg-slate-950/30">
-                      You haven't posted any opportunities yet.
-                    </div>
-                  ) : (
-                    myPostedDeals.map((deal) => (
-                      <div
-                        key={deal.id}
-                        onClick={() => {
-                          setIsProfileOpen(false);
-                          setSelectedDeal(deal);
-                          fetchDealDetail(deal.id);
-                        }}
-                        className="p-3 bg-slate-950/60 border border-slate-800 hover:border-indigo-500/50 rounded-2xl flex items-center justify-between cursor-pointer transition"
-                      >
-                        <div className="flex items-center gap-3">
-                          {deal.imageUrl ? (
-                            <img src={deal.imageUrl} alt={deal.name} className="w-10 h-10 rounded-xl object-cover" />
-                          ) : (
-                            <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500">
-                              <Building2 className="w-5 h-5" />
-                            </div>
-                          )}
-                          <div>
-                            <h4 className="text-sm font-bold text-white">{deal.name}</h4>
-                            <p className="text-xs text-slate-400">{deal.stage} • {deal.hqCity}</p>
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
-                          {deal.verifications || 0} Verifications
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-
-              {profileTab === 'notifications' && (
-                <div className="space-y-3">
-                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-2xl flex gap-3 items-start">
-                    <MessageSquare className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-                    <div className="text-xs space-y-0.5">
-                      <p className="text-slate-200"><strong className="text-white">@investor_lead</strong> commented on your post <span className="text-indigo-400">"Cross-Border Payments"</span></p>
-                      <p className="text-[10px] text-slate-500">2 hours ago</p>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-2xl flex gap-3 items-start">
-                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                    <div className="text-xs space-y-0.5">
-                      <p className="text-slate-200">Your opportunity achieved <strong className="text-emerald-400">Verified Status (+2 threshold)</strong>.</p>
-                      <p className="text-[10px] text-slate-500">1 day ago</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {profileTab === 'circles' && (
-                <div className="p-5 bg-slate-950/60 border border-slate-800 rounded-2xl text-center space-y-3">
-                  <div className="inline-flex p-3 bg-indigo-600/20 text-indigo-400 rounded-2xl border border-indigo-500/30">
-                    <CircleLock className="w-6 h-6" />
-                  </div>
-                  <div className="space-y-1">
-                    <h4 className="text-sm font-bold text-white">Private Circles (Coming Soon)</h4>
-                    <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
-                      Invite trusted co-investors to private circles. Deals shared within circles remain invisible on the public network feed.
-                    </p>
-                  </div>
+              {selectedDeal.description && (
+                <div>
+                  <span className="text-xs text-zinc-500 block mb-1">Description</span>
+                  <p className="text-sm text-zinc-300 leading-relaxed">{selectedDeal.description}</p>
                 </div>
               )}
             </div>
@@ -771,333 +325,194 @@ export default function App() {
         </div>
       )}
 
-      {/* DETAIL MODAL */}
-      {selectedDeal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto">
-          <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl my-8 relative flex flex-col max-h-[90vh]">
-            
+      {/* New Posting Form Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#121212] border border-zinc-800 w-full max-w-md rounded-2xl p-6 relative max-h-[90vh] overflow-y-auto">
             <button
-              onClick={() => setSelectedDeal(null)}
-              className="absolute top-4 right-4 z-20 p-2 bg-slate-950/80 hover:bg-slate-800 text-slate-300 rounded-full border border-slate-700/60 backdrop-blur-md transition"
+              onClick={() => setIsModalOpen(false)}
+              className="absolute top-4 right-4 text-zinc-400 hover:text-white"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <div className="overflow-y-auto space-y-6">
-              <div className="relative h-64 sm:h-72 w-full bg-slate-950">
-                {selectedDeal.imageUrl ? (
-                  <img src={selectedDeal.imageUrl} alt={selectedDeal.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 flex items-center justify-center">
-                    <Building2 className="w-20 h-20 text-slate-700" />
+            <h2 className="text-lg font-bold text-zinc-100 mb-4 border-b border-zinc-800 pb-2">
+              Post New Opportunity
+            </h2>
+
+            <form onSubmit={handleSubmit} className="space-y-4 text-sm">
+              {/* Admin Type Mapping Selector */}
+              {isAdmin && (
+                <div className="bg-amber-500/10 border border-amber-500/30 p-3 rounded-lg space-y-2">
+                  <label className="text-xs text-amber-400 font-medium block">
+                    Admin Posting Classification
+                  </label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 text-xs text-zinc-200 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="adminPostingType"
+                        value="Business"
+                        checked={formData.adminPostingType === 'Business'}
+                        onChange={(e) =>
+                          setFormData({ ...formData, adminPostingType: e.target.value })
+                        }
+                        className="accent-amber-500"
+                      />
+                      Business (Solo)
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-zinc-200 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="adminPostingType"
+                        value="VC"
+                        checked={formData.adminPostingType === 'VC'}
+                        onChange={(e) =>
+                          setFormData({ ...formData, adminPostingType: e.target.value })
+                        }
+                        className="accent-amber-500"
+                      />
+                      VC (Agency)
+                    </label>
                   </div>
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/30 to-transparent" />
-
-                <div className="absolute bottom-4 left-6 right-6 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-md bg-indigo-600 text-white uppercase tracking-wider">
-                      {selectedDeal.stage}
-                    </span>
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-md border backdrop-blur-md ${
-                      selectedDeal.listingType === 'VC' ? 'bg-purple-950/80 text-purple-300 border-purple-700/60' : 'bg-blue-950/80 text-blue-300 border-blue-700/60'
-                    }`}>
-                      {selectedDeal.listingType === 'VC' ? 'VC Listing' : 'Business Listing'}
-                    </span>
-                    {(() => {
-                      const status = getVerificationStatus(selectedDeal.verifications, selectedDeal.disputes);
-                      const StatusIcon = status.icon;
-                      return (
-                        <span className={`flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-md border ${status.color}`}>
-                          <StatusIcon className="w-3.5 h-3.5" />
-                          {status.label}
-                        </span>
-                      );
-                    })()}
-                  </div>
-                  <h2 className="text-2xl font-black text-white tracking-tight">{selectedDeal.name}</h2>
-                </div>
-              </div>
-
-              <div className="px-6 space-y-6">
-                <div className="grid grid-cols-3 gap-3 bg-slate-950/60 border border-slate-800 rounded-2xl p-4 text-center">
-                  <div>
-                    <div className="flex items-center justify-center gap-1 text-slate-400 text-xs mb-1">
-                      <Coins className="w-3.5 h-3.5 text-indigo-400" /> Rate
-                    </div>
-                    <div className="text-sm font-bold text-white">{selectedDeal.rate}</div>
-                  </div>
-                  <div className="border-x border-slate-800">
-                    <div className="flex items-center justify-center gap-1 text-slate-400 text-xs mb-1">
-                      <MapPin className="w-3.5 h-3.5 text-indigo-400" /> HQ Location
-                    </div>
-                    <div className="text-sm font-bold text-white">{selectedDeal.hqCity}</div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-center gap-1 text-slate-400 text-xs mb-1">
-                      <Globe className="w-3.5 h-3.5 text-indigo-400" /> Origin
-                    </div>
-                    <div className="text-sm font-bold text-white">{selectedDeal.originCity}</div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
-                    <TrendingUp className="w-4 h-4" /> Opportunity Bio & Overview
-                  </h3>
-                  <p className="text-sm text-slate-300 leading-relaxed bg-slate-950/40 border border-slate-800/80 p-4 rounded-2xl">
-                    {selectedDeal.description}
-                  </p>
-                </div>
-
-                <div className="border border-slate-800 bg-slate-950/80 rounded-2xl p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-sm font-bold text-white">Community Verification</h4>
-                      <p className="text-xs text-slate-400">Net score threshold: +2 Verifications confirm listing</p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleVote('verify')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-800/60 text-emerald-300 rounded-xl text-xs font-semibold transition ${selectedDeal.myVote === 'verify' ? 'ring-2 ring-emerald-400/70' : ''}`}
-                      >
-                        <ThumbsUp className="w-3.5 h-3.5" />
-                        <span>Verify ({selectedDeal.verifications || 0})</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleVote('dispute')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 bg-rose-950/50 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 rounded-xl text-xs font-semibold transition ${selectedDeal.myVote === 'dispute' ? 'ring-2 ring-rose-400/70' : ''}`}
-                      >
-                        <ThumbsDown className="w-3.5 h-3.5" />
-                        <span>Dispute ({selectedDeal.disputes || 0})</span>
-                      </button>
-                    </div>
-                  </div>
-                  {voteError && <p className="text-xs text-rose-400">{voteError}</p>}
-                </div>
-
-                <div className="space-y-4 pb-6">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
-                    <MessageSquare className="w-4 h-4" /> Discussion & Investor Notes
-                  </h3>
-
-                  <form onSubmit={handleAddComment} className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Add a comment or feedback..."
-                      value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-                    />
-                    <button
-                      type="submit"
-                      disabled={isSubmittingComment || !newComment.trim()}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl transition disabled:opacity-50 flex items-center gap-1"
-                    >
-                      {isSubmittingComment ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Post'}
-                    </button>
-                  </form>
-
-                  <div className="space-y-2">
-                    {isLoadingDetail ? (
-                      <div className="text-center py-4 text-xs text-slate-500">Loading discussion...</div>
-                    ) : !selectedDeal.comments || selectedDeal.comments.length === 0 ? (
-                      <div className="text-center py-4 text-xs text-slate-500 bg-slate-950/30 rounded-xl border border-slate-800/50">
-                        No comments yet. Start the conversation!
-                      </div>
-                    ) : (
-                      selectedDeal.comments.map((cmt) => (
-                        <div key={cmt.id} className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3 space-y-1">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-mono text-indigo-400 font-semibold">{cmt.author}</span>
-                            <span className="text-slate-500">{new Date(cmt.createdAt).toLocaleDateString()}</span>
-                          </div>
-                          <p className="text-xs text-slate-300 leading-relaxed">{cmt.text}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CREATE OPPORTUNITY MODAL */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <PlusCircle className="w-5 h-5 text-indigo-400" />
-                Post Investment Opportunity
-              </h2>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateListing} className="space-y-4">
-              
-              {/* ADMIN CONDITIONAL FIELD: LISTING TYPE */}
-              {isAdminMode && (
-                <div className="bg-indigo-950/30 border border-indigo-500/30 rounded-2xl p-3 space-y-1.5">
-                  <label className="block text-xs font-semibold text-indigo-300">Listing Category (Admin Only)</label>
-                  <select
-                    value={listingType}
-                    onChange={(e) => setListingType(e.target.value as 'Business' | 'VC')}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-                  >
-                    <option value="Business">Business Listing</option>
-                    <option value="VC">VC Listing</option>
-                  </select>
                 </div>
               )}
 
+              {/* Name Field */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Name</label>
+                <label className="block text-zinc-400 mb-1 font-medium">Name *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Cross-Border Payments Infrastructure"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  placeholder="e.g. Elly"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-amber-500"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Origin Dropdown */}
+              <div>
+                <label className="block text-zinc-400 mb-1 font-medium">Origin *</label>
+                <select
+                  value={formData.origin}
+                  onChange={(e) => setFormData({ ...formData, origin: e.target.value })}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-amber-500"
+                >
+                  {ORIGIN_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Current Location Dropdown */}
+              <div>
+                <label className="block text-zinc-400 mb-1 font-medium">Current Location *</label>
+                <select
+                  value={formData.current_location}
+                  onChange={(e) => setFormData({ ...formData, current_location: e.target.value })}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-amber-500"
+                >
+                  {LOCATION_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Stage Dropdown */}
+              <div>
+                <label className="block text-zinc-400 mb-1 font-medium">Stage *</label>
+                <select
+                  value={formData.stage}
+                  onChange={(e) => setFormData({ ...formData, stage: e.target.value })}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-amber-500"
+                >
+                  {STAGE_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Budget & Currency Input */}
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Stage</label>
+                  <label className="block text-zinc-400 mb-1 font-medium">Budget *</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="99999"
+                    required
+                    placeholder="0 - 99999"
+                    value={formData.budget}
+                    onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-zinc-400 mb-1 font-medium">Currency *</label>
                   <select
-                    value={stage}
-                    onChange={(e) => setStage(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    value={formData.currency}
+                    onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-amber-500"
                   >
-                    {['Pre-Seed', 'Seed', 'Series A', 'Series B', 'Series C', 'Others'].map((st) => (
-                      <option key={st} value={st}>{st}</option>
+                    {CURRENCY_OPTIONS.map((curr) => (
+                      <option key={curr} value={curr}>
+                        {curr}
+                      </option>
                     ))}
                   </select>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Rate (per unit)</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. $50,000 / unit"
-                    value={rate}
-                    onChange={(e) => setRate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Origin City</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Ho Chi Minh City"
-                    value={originCity}
-                    onChange={(e) => setOriginCity(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">HQ City</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Singapore"
-                    value={hqCity}
-                    onChange={(e) => setHqCity(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
+              {/* Optional Description */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Description</label>
+                <label className="block text-zinc-400 mb-1 font-medium">
+                  Description <span className="text-xs text-zinc-500">(Optional)</span>
+                </label>
                 <textarea
-                  required
                   rows={3}
-                  placeholder="Provide brief details about the opportunity..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Add additional background details..."
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:border-amber-500"
                 />
               </div>
 
+              {/* Optional Photos/Videos */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Opportunity Photo</label>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-800 border-dashed rounded-2xl bg-slate-950 hover:border-indigo-500/50 transition">
-                  {previewUrl ? (
-                    <div className="relative w-full space-y-2 text-center">
-                      <img src={previewUrl} alt="Preview" className="max-h-36 mx-auto rounded-xl object-cover" />
-                      <button
-                        type="button"
-                        onClick={() => { setSelectedFile(null); setPreviewUrl(null); }}
-                        className="text-xs text-rose-400 hover:underline"
-                      >
-                        Remove Photo
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-1 text-center">
-                      <ImageIcon className="mx-auto h-8 w-8 text-slate-500" />
-                      <div className="flex text-xs text-slate-400">
-                        <label className="relative cursor-pointer rounded-md font-semibold text-indigo-400 hover:text-indigo-300 focus-within:outline-none">
-                          <span>Upload photo</span>
-                          <input type="file" accept="image/*" onChange={(e) => {
-                            if (e.target.files && e.target.files[0]) {
-                              setSelectedFile(e.target.files[0]);
-                              setPreviewUrl(URL.createObjectURL(e.target.files[0]));
-                            }
-                          }} className="sr-only" />
-                        </label>
-                        <p className="pl-1">or drag and drop</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <label className="block text-zinc-400 mb-1 font-medium">
+                  Photos/Videos <span className="text-xs text-zinc-500">(Optional, up to 9)</span>
+                </label>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,video/*"
+                  onChange={handleMediaUpload}
+                  className="w-full text-xs text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-zinc-800 file:text-amber-400 hover:file:bg-zinc-700 cursor-pointer"
+                />
+                {formData.mediaFiles.length > 0 && (
+                  <p className="text-xs text-amber-500 mt-1">
+                    {formData.mediaFiles.length} item(s) selected
+                  </p>
+                )}
               </div>
 
-              {createError && (
-                <p className="text-xs text-rose-400 bg-rose-950/30 border border-rose-900/50 rounded-xl px-3 py-2">{createError}</p>
-              )}
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl transition shadow-lg shadow-indigo-600/20 disabled:opacity-50 flex items-center gap-2"
-                >
-                  {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Publish Deal</span>
-                </button>
-              </div>
+              <button
+                type="submit"
+                className="w-full bg-amber-500 hover:bg-amber-400 text-black font-semibold py-2.5 rounded-lg transition-all mt-4"
+              >
+                Publish Opportunity
+              </button>
             </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }
