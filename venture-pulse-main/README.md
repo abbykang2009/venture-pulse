@@ -1,4 +1,4 @@
-# Venture Pulse
+# Venture Pulse (latest version)
 
 React + Vite frontend, Cloudflare Pages Functions backend, D1 (SQL) and R2 (images).
 Login is Telegram-only via **@VenturePulseAuthBot**; every profile, post, vote and comment is tied to the verified Telegram ID.
