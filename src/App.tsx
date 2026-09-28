@@ -22,7 +22,13 @@ import {
   ThumbsDown,
   Globe,
   TrendingUp,
-  Coins
+  Coins,
+  User as UserIcon,
+  Bell,
+  Users,
+  Briefcase,
+  Layers,
+  Lock as CircleLock
 } from 'lucide-react';
 
 interface User {
@@ -49,6 +55,7 @@ interface Deal {
   hqCity: string;
   imageUrl?: string;
   postedBy?: string;
+  listingType?: 'Business' | 'VC';
   verifications?: number;
   disputes?: number;
   comments?: Comment[];
@@ -62,7 +69,6 @@ declare global {
 
 const ADMIN_HANDLES = ['exhamstersg', 'EmilyCucCung'];
 
-// Verification status calculation helper logic
 function getVerificationStatus(verifications: number = 0, disputes: number = 0) {
   const diff = verifications - disputes;
   if (diff >= 2) {
@@ -76,19 +82,23 @@ function getVerificationStatus(verifications: number = 0, disputes: number = 0) 
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [selectedRole, setSelectedRole] = useState<'Investor' | 'Vc' | 'Business' | 'Admin'>('Investor');
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
   const [selectedStage, setSelectedStage] = useState<string>('All');
   const [deals, setDeals] = useState<Deal[]>([]);
   const [isLoadingDeals, setIsLoadingDeals] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Selected Deal for Profile Modal
+  // Profile Modal State
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [profileTab, setProfileTab] = useState<'myPosts' | 'notifications' | 'circles'>('myPosts');
+
+  // Selected Deal Detail Modal
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
 
-  // Creation Form State
+  // Opportunity Creation Form
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [name, setName] = useState('');
   const [stage, setStage] = useState('Pre-Seed');
@@ -96,18 +106,19 @@ export default function App() {
   const [originCity, setOriginCity] = useState('');
   const [hqCity, setHqCity] = useState('');
   const [description, setDescription] = useState('');
+  const [listingType, setListingType] = useState<'Business' | 'VC'>('Business');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const isAdmin = user ? ADMIN_HANDLES.includes(user.username) : false;
+  const isUserAdmin = user ? ADMIN_HANDLES.includes(user.username) : false;
 
   useEffect(() => {
     const savedUser = localStorage.getItem('vp_user');
     if (savedUser) {
       const parsedUser: User = JSON.parse(savedUser);
       setUser(parsedUser);
-      setSelectedRole(ADMIN_HANDLES.includes(parsedUser.username) ? 'Admin' : 'Investor');
+      setIsAdminMode(ADMIN_HANDLES.includes(parsedUser.username));
     }
   }, []);
 
@@ -115,7 +126,7 @@ export default function App() {
     window.onTelegramAuth = (telegramUser: User) => {
       setUser(telegramUser);
       localStorage.setItem('vp_user', JSON.stringify(telegramUser));
-      setSelectedRole(ADMIN_HANDLES.includes(telegramUser.username) ? 'Admin' : 'Investor');
+      setIsAdminMode(ADMIN_HANDLES.includes(telegramUser.username));
     };
   }, []);
 
@@ -222,19 +233,6 @@ export default function App() {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setSelectedFile(file);
-      setPreviewUrl(URL.createObjectURL(file));
-    }
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('vp_user');
-  };
-
   const handleCreateListing = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !description || !rate || !originCity || !hqCity) return;
@@ -249,6 +247,7 @@ export default function App() {
       formData.append('hqCity', hqCity);
       formData.append('description', description);
       formData.append('postedBy', user?.username || user?.first_name || 'Anonymous');
+      formData.append('listingType', isAdminMode ? listingType : 'Business');
 
       if (selectedFile) {
         formData.append('file', selectedFile);
@@ -296,6 +295,10 @@ export default function App() {
     }
   };
 
+  const myPostedDeals = deals.filter(
+    (d) => d.postedBy === user?.username || d.postedBy === user?.first_name
+  );
+
   const filteredDeals = selectedStage === 'All'
     ? deals
     : deals.filter((deal) => deal.stage === selectedStage);
@@ -309,7 +312,7 @@ export default function App() {
               <Building2 className="w-8 h-8" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-white">VenturePulse</h1>
-            <p className="text-sm text-slate-400">Anonymized VC & Investor Network.</p>
+            <p className="text-sm text-slate-400">Anonymized Opportunities Network</p>
           </div>
 
           <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 text-left space-y-2 text-xs text-slate-300">
@@ -327,7 +330,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center justify-center gap-4 text-xs text-slate-500 pt-2 border-t border-slate-800/60">
-            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Verified Investor</span>
+            <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Verified Network</span>
             <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Vetted Deals</span>
           </div>
         </div>
@@ -337,6 +340,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#070913] text-slate-100 font-sans p-6 space-y-6 max-w-7xl mx-auto">
+      
+      {/* HEADER SECTION */}
       <header className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800/60">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-indigo-600/20 border border-indigo-500/30 rounded-xl text-indigo-400">
@@ -344,32 +349,30 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">VenturePulse</h1>
-            <p className="text-xs text-slate-400 font-medium">Anonymized VC & Investor Network</p>
+            <p className="text-xs text-slate-400 font-medium">Anonymized Opportunities Network</p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {isAdmin ? (
-            <div className="flex items-center bg-slate-900/80 border border-indigo-500/30 rounded-xl p-1 text-xs font-semibold">
-              <span className="px-3 text-indigo-400 flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> Admin Mode:
-              </span>
-              {(['Investor', 'Vc', 'Business', 'Admin'] as const).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setSelectedRole(r)}
-                  className={`px-3 py-1.5 rounded-lg transition-all ${
-                    selectedRole === r ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/80 border border-slate-800 rounded-xl text-xs font-semibold text-slate-300">
-              <span className="text-slate-500">Role:</span>
-              <span className="text-indigo-400 font-bold">Investor</span>
+          {/* USER / ADMIN MODE TOGGLE */}
+          {isUserAdmin && (
+            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs font-medium">
+              <button
+                onClick={() => setIsAdminMode(false)}
+                className={`px-3 py-1.5 rounded-lg transition-all ${
+                  !isAdminMode ? 'bg-indigo-600 text-white shadow-sm font-semibold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                User
+              </button>
+              <button
+                onClick={() => setIsAdminMode(true)}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${
+                  isAdminMode ? 'bg-indigo-600 text-white shadow-sm font-semibold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" /> Admin
+              </button>
             </div>
           )}
 
@@ -381,13 +384,17 @@ export default function App() {
             <RefreshCw className={`w-4 h-4 ${isLoadingDeals ? 'animate-spin' : ''}`} />
           </button>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-mono text-indigo-300">
+          {/* TELEGRAM USER PROFILE BUTTON */}
+          <button
+            onClick={() => setIsProfileOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/50 rounded-xl text-xs font-mono text-indigo-300 transition"
+          >
             <Send className="w-3.5 h-3.5 text-indigo-400" />
             <span>@{user.username || user.first_name}</span>
-          </div>
+          </button>
 
           <button
-            onClick={handleLogout}
+            onClick={() => { setUser(null); localStorage.removeItem('vp_user'); }}
             title="Log out"
             className="p-2 bg-slate-900 hover:bg-rose-950/40 border border-slate-800 hover:border-rose-800/60 text-slate-400 hover:text-rose-400 rounded-xl transition"
           >
@@ -396,14 +403,15 @@ export default function App() {
         </div>
       </header>
 
+      {/* BANNER NOTICE */}
       <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3 text-sm text-slate-300">
           <ShieldAlert className="w-5 h-5 text-indigo-400 shrink-0" />
           <span>
-            {isAdmin ? (
-              <><strong className="text-white">ADMIN PERMISSIONS:</strong> You can manage, post, and review deal submissions on behalf of VCs and Businesses.</>
+            {isAdminMode ? (
+              <><strong className="text-white">ADMIN MODE ENABLED:</strong> You can post on behalf of Businesses or VCs, and manage opportunity listings.</>
             ) : (
-              <><strong className="text-white">INVESTOR NETWORK:</strong> Click any card to inspect full profile data, verify details, or add community comments.</>
+              <><strong className="text-white">NETWORK FEED:</strong> Click any card to inspect full details, community verification scores, or post notes.</>
             )}
           </span>
         </div>
@@ -417,6 +425,7 @@ export default function App() {
         </button>
       </div>
 
+      {/* STAGE FILTERS */}
       <div className="flex flex-wrap items-center gap-2 pt-2">
         {['All', 'Pre-Seed', 'Seed', 'Series A', 'Series B', 'Series C', 'Others'].map((s) => (
           <button
@@ -433,21 +442,22 @@ export default function App() {
         ))}
       </div>
 
+      {/* OPPORTUNITY CARDS (1x1 SQUARE) */}
       {isLoadingDeals ? (
         <div className="border border-slate-800/80 bg-slate-900/30 rounded-2xl p-16 flex flex-col items-center justify-center gap-3 text-slate-400 font-medium">
           <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
-          <span>Loading live investment deals...</span>
+          <span>Loading opportunities...</span>
         </div>
       ) : filteredDeals.length === 0 ? (
         <div className="border border-slate-800/80 bg-slate-900/30 rounded-2xl p-16 text-center text-slate-400 font-medium">
-          No investment opportunities found for this stage.
+          No opportunities found for this stage.
         </div>
       ) : (
-        /* 1x1 SQUARE CARDS GRID */
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 pt-2">
           {filteredDeals.map((deal) => {
             const status = getVerificationStatus(deal.verifications, deal.disputes);
             const StatusIcon = status.icon;
+            const isVcListing = deal.listingType === 'VC';
 
             return (
               <div
@@ -471,17 +481,28 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Gradient Overlay */}
+                {/* Dark Overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent opacity-90 group-hover:opacity-80 transition" />
 
-                {/* Top Badge Overlay */}
-                <div className="absolute top-3 left-3 right-3 flex items-center justify-between z-10">
+                {/* TYPE RIBBON / BADGE (Top-Right) */}
+                <div className="absolute top-3 right-3 z-10">
+                  <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border backdrop-blur-md shadow-md ${
+                    isVcListing 
+                      ? 'bg-purple-950/80 text-purple-300 border-purple-700/60' 
+                      : 'bg-blue-950/80 text-blue-300 border-blue-700/60'
+                  }`}>
+                    {isVcListing ? 'VC Deal' : 'Business'}
+                  </span>
+                </div>
+
+                {/* VERIFICATION BADGE & ADMIN DELETE (Top-Left) */}
+                <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5">
                   <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border backdrop-blur-md ${status.color}`}>
                     <StatusIcon className="w-3 h-3" />
                     {status.label}
                   </span>
 
-                  {isAdmin && (
+                  {isAdminMode && (
                     <button
                       onClick={(e) => handleDeleteDeal(e, deal.id)}
                       disabled={deletingId === deal.id}
@@ -493,7 +514,7 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Bottom Content */}
+                {/* Bottom Overlay Info */}
                 <div className="absolute bottom-0 inset-x-0 p-3.5 z-10 space-y-1">
                   <span className="inline-block text-[10px] font-semibold text-indigo-300 uppercase tracking-wider">
                     {deal.stage}
@@ -514,12 +535,150 @@ export default function App() {
         </div>
       )}
 
-      {/* DATING-PROFILE STYLE OPPORTUNITY MODAL */}
+      {/* USER PROFILE & NOTIFICATIONS MODAL */}
+      {isProfileOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
+          <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl relative flex flex-col max-h-[85vh]">
+            
+            {/* Header */}
+            <div className="p-6 pb-4 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl text-indigo-400">
+                  <UserIcon className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">@{user.username || user.first_name}</h2>
+                  <p className="text-xs text-slate-400">Personal Dashboard & Private Network</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsProfileOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-xl bg-slate-800/60"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Profile Navigation Tabs */}
+            <div className="flex border-b border-slate-800 bg-slate-950/40 px-6">
+              <button
+                onClick={() => setProfileTab('myPosts')}
+                className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition ${
+                  profileTab === 'myPosts'
+                    ? 'border-indigo-500 text-indigo-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Briefcase className="w-4 h-4" /> My Submissions ({myPostedDeals.length})
+              </button>
+
+              <button
+                onClick={() => setProfileTab('notifications')}
+                className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition ${
+                  profileTab === 'notifications'
+                    ? 'border-indigo-500 text-indigo-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Bell className="w-4 h-4" /> Notifications
+              </button>
+
+              <button
+                onClick={() => setProfileTab('circles')}
+                className={`flex items-center gap-2 py-3 px-3 text-xs font-semibold border-b-2 transition ${
+                  profileTab === 'circles'
+                    ? 'border-indigo-500 text-indigo-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Users className="w-4 h-4" /> Private Circles
+              </button>
+            </div>
+
+            {/* Profile Tab Contents */}
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              {profileTab === 'myPosts' && (
+                <div className="space-y-3">
+                  {myPostedDeals.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-slate-500 border border-slate-800/80 rounded-2xl bg-slate-950/30">
+                      You haven't posted any opportunities yet.
+                    </div>
+                  ) : (
+                    myPostedDeals.map((deal) => (
+                      <div
+                        key={deal.id}
+                        onClick={() => {
+                          setIsProfileOpen(false);
+                          setSelectedDeal(deal);
+                          fetchDealDetail(deal.id);
+                        }}
+                        className="p-3 bg-slate-950/60 border border-slate-800 hover:border-indigo-500/50 rounded-2xl flex items-center justify-between cursor-pointer transition"
+                      >
+                        <div className="flex items-center gap-3">
+                          {deal.imageUrl ? (
+                            <img src={deal.imageUrl} alt={deal.name} className="w-10 h-10 rounded-xl object-cover" />
+                          ) : (
+                            <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500">
+                              <Building2 className="w-5 h-5" />
+                            </div>
+                          )}
+                          <div>
+                            <h4 className="text-sm font-bold text-white">{deal.name}</h4>
+                            <p className="text-xs text-slate-400">{deal.stage} • {deal.hqCity}</p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+                          {deal.verifications || 0} Verifications
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {profileTab === 'notifications' && (
+                <div className="space-y-3">
+                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-2xl flex gap-3 items-start">
+                    <MessageSquare className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                    <div className="text-xs space-y-0.5">
+                      <p className="text-slate-200"><strong className="text-white">@investor_lead</strong> commented on your post <span className="text-indigo-400">"Cross-Border Payments"</span></p>
+                      <p className="text-[10px] text-slate-500">2 hours ago</p>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-2xl flex gap-3 items-start">
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div className="text-xs space-y-0.5">
+                      <p className="text-slate-200">Your opportunity achieved <strong className="text-emerald-400">Verified Status (+2 threshold)</strong>.</p>
+                      <p className="text-[10px] text-slate-500">1 day ago</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {profileTab === 'circles' && (
+                <div className="p-5 bg-slate-950/60 border border-slate-800 rounded-2xl text-center space-y-3">
+                  <div className="inline-flex p-3 bg-indigo-600/20 text-indigo-400 rounded-2xl border border-indigo-500/30">
+                    <CircleLock className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-white">Private Circles (Coming Soon)</h4>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+                      Invite trusted co-investors to private circles. Deals shared within circles remain invisible on the public network feed.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DETAIL MODAL */}
       {selectedDeal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto">
           <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl my-8 relative flex flex-col max-h-[90vh]">
             
-            {/* Close Button */}
             <button
               onClick={() => setSelectedDeal(null)}
               className="absolute top-4 right-4 z-20 p-2 bg-slate-950/80 hover:bg-slate-800 text-slate-300 rounded-full border border-slate-700/60 backdrop-blur-md transition"
@@ -528,8 +687,6 @@ export default function App() {
             </button>
 
             <div className="overflow-y-auto space-y-6">
-              
-              {/* Profile Cover Image Banner */}
               <div className="relative h-64 sm:h-72 w-full bg-slate-950">
                 {selectedDeal.imageUrl ? (
                   <img src={selectedDeal.imageUrl} alt={selectedDeal.name} className="w-full h-full object-cover" />
@@ -540,11 +697,15 @@ export default function App() {
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/30 to-transparent" />
 
-                {/* Profile Header overlay */}
                 <div className="absolute bottom-4 left-6 right-6 space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold px-2.5 py-1 rounded-md bg-indigo-600 text-white uppercase tracking-wider">
                       {selectedDeal.stage}
+                    </span>
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-md border backdrop-blur-md ${
+                      selectedDeal.listingType === 'VC' ? 'bg-purple-950/80 text-purple-300 border-purple-700/60' : 'bg-blue-950/80 text-blue-300 border-blue-700/60'
+                    }`}>
+                      {selectedDeal.listingType === 'VC' ? 'VC Listing' : 'Business Listing'}
                     </span>
                     {(() => {
                       const status = getVerificationStatus(selectedDeal.verifications, selectedDeal.disputes);
@@ -561,10 +722,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Profile Details Body */}
               <div className="px-6 space-y-6">
-                
-                {/* Stats Grid */}
                 <div className="grid grid-cols-3 gap-3 bg-slate-950/60 border border-slate-800 rounded-2xl p-4 text-center">
                   <div>
                     <div className="flex items-center justify-center gap-1 text-slate-400 text-xs mb-1">
@@ -586,7 +744,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Description Prompt */}
                 <div className="space-y-2">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
                     <TrendingUp className="w-4 h-4" /> Opportunity Bio & Overview
@@ -596,12 +753,11 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* Verification Voting & Sentiment Bar */}
                 <div className="border border-slate-800 bg-slate-950/80 rounded-2xl p-4 space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-bold text-white">Community Verification</h4>
-                      <p className="text-xs text-slate-400">Net score required: +2 Verifications to confirm listing</p>
+                      <p className="text-xs text-slate-400">Net score threshold: +2 Verifications confirm listing</p>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -624,7 +780,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Comment / Discussion Section */}
                 <div className="space-y-4 pb-6">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
                     <MessageSquare className="w-4 h-4" /> Discussion & Investor Notes
@@ -633,7 +788,7 @@ export default function App() {
                   <form onSubmit={handleAddComment} className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Add a comment or investor feedback..."
+                      placeholder="Add a comment or feedback..."
                       value={newComment}
                       onChange={(e) => setNewComment(e.target.value)}
                       className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
@@ -647,10 +802,9 @@ export default function App() {
                     </button>
                   </form>
 
-                  {/* Comment List */}
                   <div className="space-y-2">
                     {isLoadingDetail ? (
-                      <div className="text-center py-4 text-xs text-slate-500">Loading discussion thread...</div>
+                      <div className="text-center py-4 text-xs text-slate-500">Loading discussion...</div>
                     ) : !selectedDeal.comments || selectedDeal.comments.length === 0 ? (
                       <div className="text-center py-4 text-xs text-slate-500 bg-slate-950/30 rounded-xl border border-slate-800/50">
                         No comments yet. Start the conversation!
@@ -675,7 +829,7 @@ export default function App() {
         </div>
       )}
 
-      {/* CREATE OPPORTUNITY MODAL FORM */}
+      {/* CREATE OPPORTUNITY MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -693,6 +847,22 @@ export default function App() {
             </div>
 
             <form onSubmit={handleCreateListing} className="space-y-4">
+              
+              {/* ADMIN CONDITIONAL FIELD: LISTING TYPE */}
+              {isAdminMode && (
+                <div className="bg-indigo-950/30 border border-indigo-500/30 rounded-2xl p-3 space-y-1.5">
+                  <label className="block text-xs font-semibold text-indigo-300">Listing Category (Admin Only)</label>
+                  <select
+                    value={listingType}
+                    onChange={(e) => setListingType(e.target.value as 'Business' | 'VC')}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="Business">Business Listing</option>
+                    <option value="VC">VC Listing</option>
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Name</label>
                 <input
@@ -720,7 +890,7 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Rate (per investment)</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Rate (per unit)</label>
                   <input
                     type="text"
                     required
@@ -734,7 +904,7 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Country of Origin (City)</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Origin City</label>
                   <input
                     type="text"
                     required
@@ -746,7 +916,7 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">HQ Location (City)</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">HQ City</label>
                   <input
                     type="text"
                     required
@@ -759,11 +929,11 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Brief Description</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Description</label>
                 <textarea
                   required
                   rows={3}
-                  placeholder="Provide brief details about the company, market traction, or revenue infrastructure..."
+                  placeholder="Provide brief details about the opportunity..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
@@ -771,7 +941,7 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Opportunity Photo / Banner</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Opportunity Photo</label>
                 <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-800 border-dashed rounded-2xl bg-slate-950 hover:border-indigo-500/50 transition">
                   {previewUrl ? (
                     <div className="relative w-full space-y-2 text-center">
@@ -789,12 +959,16 @@ export default function App() {
                       <ImageIcon className="mx-auto h-8 w-8 text-slate-500" />
                       <div className="flex text-xs text-slate-400">
                         <label className="relative cursor-pointer rounded-md font-semibold text-indigo-400 hover:text-indigo-300 focus-within:outline-none">
-                          <span>Upload a photo</span>
-                          <input type="file" accept="image/*" onChange={handleFileChange} className="sr-only" />
+                          <span>Upload photo</span>
+                          <input type="file" accept="image/*" onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              setSelectedFile(e.target.files[0]);
+                              setPreviewUrl(URL.createObjectURL(e.target.files[0]));
+                            }
+                          }} className="sr-only" />
                         </label>
                         <p className="pl-1">or drag and drop</p>
                       </div>
-                      <p className="text-[10px] text-slate-500">PNG, JPG, WEBP up to 10MB (Stored via Cloudflare R2)</p>
                     </div>
                   )}
                 </div>
@@ -814,13 +988,14 @@ export default function App() {
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl transition shadow-lg shadow-indigo-600/20 disabled:opacity-50 flex items-center gap-2"
                 >
                   {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{isSubmitting ? 'Saving to Database...' : 'Publish Deal'}</span>
+                  <span>Publish Deal</span>
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
     </div>
   );
 }
