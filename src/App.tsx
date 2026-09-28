@@ -1,20 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Building2, 
   TrendingUp, 
   Plus, 
-  ShieldCheck, 
-  AlertTriangle, 
-  MessageSquare, 
   Search, 
   MapPin, 
-  DollarSign, 
   X, 
-  Upload, 
   Trash2,
-  CheckCircle2,
-  XCircle,
-  Briefcase
+  Image as ImageIcon,
+  Send,
+  LogOut
 } from 'lucide-react';
 
 interface Comment {
@@ -42,6 +36,16 @@ interface Deal {
   comments?: Comment[];
 }
 
+interface TelegramUser {
+  id: number;
+  first_name: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+  auth_date: number;
+  hash: string;
+}
+
 export function App() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -49,6 +53,10 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   
+  // Telegram Auth State
+  const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
+  const telegramContainerRef = useRef<HTMLDivElement>(null);
+
   // Admin & Modal state
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [showModal, setShowModal] = useState<boolean>(false);
@@ -70,6 +78,41 @@ export function App() {
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
+  // Load Telegram Auth & Persistent Session
+  useEffect(() => {
+    const savedUser = localStorage.getItem('telegram_user');
+    if (savedUser) {
+      try {
+        setTelegramUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error('Failed to parse saved Telegram user');
+      }
+    }
+
+    (window as any).onTelegramAuth = (user: TelegramUser) => {
+      setTelegramUser(user);
+      localStorage.setItem('telegram_user', JSON.stringify(user));
+    };
+
+    if (telegramContainerRef.current && !telegramUser) {
+      telegramContainerRef.current.innerHTML = '';
+      const script = document.createElement('script');
+      script.src = 'https://telegram.org/js/telegram-widget.js?22';
+      script.setAttribute('data-telegram-login', 'YourBotUsername'); // Replace with your Telegram Bot Username
+      script.setAttribute('data-size', 'medium');
+      script.setAttribute('data-radius', '8');
+      script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+      script.setAttribute('data-request-access', 'write');
+      script.async = true;
+      telegramContainerRef.current.appendChild(script);
+    }
+  }, [telegramUser]);
+
+  const handleLogoutTelegram = () => {
+    setTelegramUser(null);
+    localStorage.removeItem('telegram_user');
+  };
+
   // Fetch Deals from Backend
   const fetchDeals = async () => {
     setLoading(true);
@@ -78,8 +121,6 @@ export function App() {
       if (res.ok) {
         const data = await res.json();
         setDeals(Array.isArray(data) ? data : []);
-      } else {
-        console.error('Failed to fetch deals');
       }
     } catch (err) {
       console.error('Error fetching deals:', err);
@@ -92,7 +133,7 @@ export function App() {
     fetchDeals();
   }, []);
 
-  // Fetch Single Deal Details (with comments & votes)
+  // Fetch Single Deal Details
   const openDealDetails = async (deal: Deal) => {
     setSelectedDeal(deal);
     try {
@@ -110,7 +151,7 @@ export function App() {
   const handlePublishDeal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formState.name || !formState.description) {
-      alert('Please fill in all required fields.');
+      alert('Please fill in required fields.');
       return;
     }
 
@@ -124,7 +165,7 @@ export function App() {
       formData.append('hqCity', formState.hqCity);
       formData.append('description', formState.description);
       formData.append('listingType', formState.listingType);
-      formData.append('postedBy', isAdmin ? 'Admin' : 'Community');
+      formData.append('postedBy', telegramUser ? telegramUser.first_name : (isAdmin ? 'Admin' : 'Community'));
 
       if (selectedFile) {
         formData.append('file', selectedFile);
@@ -135,57 +176,28 @@ export function App() {
         body: formData,
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to create deal');
+      if (res.ok) {
+        setShowModal(false);
+        setFormState({
+          name: '',
+          stage: 'Seed',
+          rate: '',
+          originCity: '',
+          hqCity: '',
+          description: '',
+          listingType: 'Business',
+        });
+        setSelectedFile(null);
+        fetchDeals();
       }
-
-      // Reset Form & Close Modal
-      setShowModal(false);
-      setFormState({
-        name: '',
-        stage: 'Seed',
-        rate: '',
-        originCity: '',
-        hqCity: '',
-        description: '',
-        listingType: 'Business',
-      });
-      setSelectedFile(null);
-      fetchDeals();
-    } catch (err: any) {
-      alert(`Error publishing deal: ${err.message}`);
+    } catch (err) {
+      console.error('Error publishing deal:', err);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Vote Handler (Verify / Dispute)
-  const handleVote = async (dealId: string, voteType: 'verify' | 'dispute') => {
-    try {
-      const res = await fetch('/api/deals?action=vote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dealId,
-          userId: 'user_' + Math.random().toString(36).substring(2, 9),
-          voteType,
-        }),
-      });
-
-      if (res.ok) {
-        fetchDeals();
-        if (selectedDeal && selectedDeal.id === dealId) {
-          openDealDetails(selectedDeal);
-        }
-      }
-    } catch (err) {
-      console.error('Error submitting vote:', err);
-    }
-  };
-
-  // Submit Comment
+  // Add Comment
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDeal || !newComment.trim()) return;
@@ -196,7 +208,7 @@ export function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dealId: selectedDeal.id,
-          author: commentAuthor.trim() || 'Anonymous',
+          author: telegramUser ? telegramUser.first_name : (commentAuthor.trim() || 'Anonymous'),
           text: newComment,
         }),
       });
@@ -228,23 +240,21 @@ export function App() {
     }
   };
 
-  // Filter Deals based on Tab and Search Query
+  // Filter Deals
   const filteredDeals = deals.filter((deal) => {
     const matchesTab =
       activeTab === 'All' ? true : (deal.listingType || 'Business') === activeTab;
     const matchesSearch =
       deal.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deal.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deal.originCity.toLowerCase().includes(searchQuery.toLowerCase()) ||
       deal.hqCity.toLowerCase().includes(searchQuery.toLowerCase());
 
     return matchesTab && matchesSearch;
   });
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 font-sans">
-      {/* Top Header */}
-      <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-40">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
+      {/* Header */}
+      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="bg-indigo-600 p-2 rounded-lg">
@@ -254,6 +264,51 @@ export function App() {
           </div>
 
           <div className="flex items-center space-x-4">
+            {/* Telegram Auth Container */}
+            {telegramUser ? (
+              <div className="flex items-center space-x-2 bg-slate-800 border border-slate-700/60 rounded-xl px-3 py-1.5 text-xs text-slate-200">
+                {telegramUser.photo_url ? (
+                  <img 
+                    src={telegramUser.photo_url} 
+                    alt={telegramUser.first_name} 
+                    className="w-5 h-5 rounded-full object-cover" 
+                  />
+                ) : (
+                  <Send className="w-4 h-4 text-sky-400" />
+                )}
+                <span className="font-semibold text-white">
+                  {telegramUser.first_name}
+                </span>
+                <button 
+                  onClick={handleLogoutTelegram}
+                  title="Logout"
+                  className="text-slate-400 hover:text-rose-400 ml-1 transition"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-2">
+                <div ref={telegramContainerRef} id="telegram-login-container" />
+                <button
+                  onClick={() => {
+                    const mockUser: TelegramUser = {
+                      id: 12345678,
+                      first_name: 'Gregory',
+                      username: 'gregory_ang',
+                      auth_date: Date.now(),
+                      hash: 'mock_hash',
+                    };
+                    (window as any).onTelegramAuth(mockUser);
+                  }}
+                  className="flex items-center space-x-1.5 bg-sky-500 hover:bg-sky-400 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Log in with Telegram</span>
+                </button>
+              </div>
+            )}
+
             <button
               onClick={() => setIsAdmin(!isAdmin)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
@@ -276,12 +331,11 @@ export function App() {
         </div>
       </header>
 
-      {/* Main Content */}
+      {/* Main Grid */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Controls Header */}
+        {/* Controls Bar */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          {/* Tabs */}
-          <div className="flex bg-slate-800/80 p-1 rounded-xl w-fit border border-slate-700/50">
+          <div className="flex bg-slate-900 p-1 rounded-xl w-fit border border-slate-800">
             {(['All', 'Business', 'VC'] as const).map((tab) => (
               <button
                 key={tab}
@@ -297,101 +351,81 @@ export function App() {
             ))}
           </div>
 
-          {/* Search Bar */}
           <div className="relative w-full md:w-80">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search listings or cities..."
+              placeholder="Search by name or HQ city..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-800/80 border border-slate-700/50 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition"
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition"
             />
           </div>
         </div>
 
-        {/* Listings Grid */}
+        {/* 1x1 Square Tile Grid */}
         {loading ? (
           <div className="text-center py-20 text-slate-400">Loading opportunities...</div>
         ) : filteredDeals.length === 0 ? (
-          <div className="text-center py-20 bg-slate-800/30 rounded-2xl border border-slate-800">
+          <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800">
             <p className="text-slate-400">No opportunities found.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {filteredDeals.map((deal) => (
               <div
                 key={deal.id}
                 onClick={() => openDealDetails(deal)}
-                className="group bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 rounded-2xl p-5 cursor-pointer transition duration-200 relative flex flex-col justify-between overflow-hidden"
+                className="group aspect-square bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl overflow-hidden cursor-pointer relative shadow-lg transition duration-200 flex flex-col justify-between"
               >
-                {/* Type Badge */}
-                <div className="absolute top-4 right-4">
+                {/* Background Photo */}
+                {deal.imageUrl ? (
+                  <img
+                    src={deal.imageUrl}
+                    alt={deal.name}
+                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                  />
+                ) : (
+                  <div className="absolute inset-0 bg-slate-800/60 flex items-center justify-center">
+                    <ImageIcon className="w-10 h-10 text-slate-700" />
+                  </div>
+                )}
+
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent opacity-90" />
+
+                {/* Listing Type Ribbon */}
+                <div className="relative z-10 p-3 flex justify-between items-start">
                   <span
-                    className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase shadow ${
                       deal.listingType === 'VC'
-                        ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
-                        : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-emerald-600 text-white'
                     }`}
                   >
                     {deal.listingType || 'Business'}
                   </span>
+
+                  {isAdmin && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteDeal(deal.id);
+                      }}
+                      className="bg-slate-900/80 hover:bg-rose-600 text-slate-300 hover:text-white p-1.5 rounded-lg transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
-                <div>
-                  <div className="pr-20 mb-2">
-                    <h3 className="text-lg font-bold text-white group-hover:text-indigo-400 transition">
-                      {deal.name}
-                    </h3>
-                    <p className="text-xs text-indigo-400 font-medium">{deal.stage} Stage</p>
-                  </div>
-
-                  <p className="text-slate-300 text-sm line-clamp-2 mb-4 leading-relaxed">
-                    {deal.description}
-                  </p>
-                </div>
-
-                <div>
-                  {/* Location & Rate */}
-                  <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 py-3 border-t border-slate-700/40 mb-3">
-                    <div className="flex items-center space-x-1">
-                      <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                      <span className="truncate">
-                        {deal.originCity || 'N/A'} / {deal.hqCity || 'N/A'}
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-1 justify-end">
-                      <DollarSign className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                      <span className="font-semibold text-slate-200 truncate">
-                        {deal.rate ? `${deal.rate} USD` : 'Unspecified'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Actions & Verification */}
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <div className="flex items-center space-x-3">
-                      <span className="flex items-center space-x-1 text-emerald-400">
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>{deal.verifications || 0}</span>
-                      </span>
-                      <span className="flex items-center space-x-1 text-rose-400">
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        <span>{deal.disputes || 0}</span>
-                      </span>
-                    </div>
-
-                    {isAdmin && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteDeal(deal.id);
-                        }}
-                        className="text-rose-400 hover:text-rose-300 p-1"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
+                {/* Name & HQ City ONLY */}
+                <div className="relative z-10 p-3.5">
+                  <h3 className="text-base font-bold text-white leading-snug line-clamp-2 group-hover:text-indigo-300 transition">
+                    {deal.name}
+                  </h3>
+                  <div className="flex items-center space-x-1 text-xs text-slate-300 font-medium mt-1">
+                    <MapPin className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span className="truncate">{deal.hqCity || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -402,8 +436,8 @@ export function App() {
 
       {/* Deal Details Modal */}
       {selectedDeal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 relative shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-6 relative shadow-2xl">
             <button
               onClick={() => setSelectedDeal(null)}
               className="absolute top-4 right-4 text-slate-400 hover:text-white p-1"
@@ -411,18 +445,18 @@ export function App() {
               <X className="w-5 h-5" />
             </button>
 
-            <div className="mb-6">
+            <div className="mb-4">
               <span
-                className={`px-2.5 py-1 rounded-full text-xs font-semibold inline-block mb-3 ${
+                className={`px-2.5 py-1 rounded-full text-xs font-semibold inline-block mb-2 ${
                   selectedDeal.listingType === 'VC'
-                    ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
-                    : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                    ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                    : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                 }`}
               >
                 {selectedDeal.listingType || 'Business'} Listing
               </span>
               <h2 className="text-2xl font-bold text-white">{selectedDeal.name}</h2>
-              <p className="text-sm text-indigo-400 font-medium mt-1">
+              <p className="text-sm text-indigo-400 font-medium mt-0.5">
                 {selectedDeal.stage} Stage
               </p>
             </div>
@@ -435,18 +469,20 @@ export function App() {
               />
             )}
 
-            <div className="bg-slate-800/40 p-4 rounded-xl border border-slate-800 mb-6 space-y-2 text-sm">
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 mb-6 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-400">Origin City:</span>
-                <span className="text-slate-200 font-medium">{selectedDeal.originCity}</span>
+                <span className="text-slate-200 font-medium">{selectedDeal.originCity || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">HQ City:</span>
-                <span className="text-slate-200 font-medium">{selectedDeal.hqCity}</span>
+                <span className="text-slate-200 font-medium">{selectedDeal.hqCity || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Rate / Valuation:</span>
-                <span className="text-slate-200 font-medium">{selectedDeal.rate} USD</span>
+                <span className="text-slate-400">Target / Valuation:</span>
+                <span className="text-slate-200 font-medium">
+                  {selectedDeal.rate ? `${selectedDeal.rate} USD` : 'N/A'}
+                </span>
               </div>
             </div>
 
@@ -459,26 +495,8 @@ export function App() {
               </p>
             </div>
 
-            {/* Voting Section */}
-            <div className="flex items-center space-x-4 border-t border-b border-slate-800 py-4 mb-6">
-              <button
-                onClick={() => handleVote(selectedDeal.id, 'verify')}
-                className="flex-1 flex items-center justify-center space-x-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 py-2 rounded-xl text-sm font-medium transition"
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>Verify ({selectedDeal.verifications || 0})</span>
-              </button>
-              <button
-                onClick={() => handleVote(selectedDeal.id, 'dispute')}
-                className="flex-1 flex items-center justify-center space-x-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 py-2 rounded-xl text-sm font-medium transition"
-              >
-                <AlertTriangle className="w-4 h-4" />
-                <span>Dispute ({selectedDeal.disputes || 0})</span>
-              </button>
-            </div>
-
-            {/* Comments Section */}
-            <div>
+            {/* Comments */}
+            <div className="border-t border-slate-800 pt-6">
               <h4 className="text-sm font-bold text-white mb-4">
                 Discussion ({selectedDeal.comments?.length || 0})
               </h4>
@@ -486,7 +504,7 @@ export function App() {
               <div className="space-y-3 mb-6 max-h-48 overflow-y-auto">
                 {selectedDeal.comments && selectedDeal.comments.length > 0 ? (
                   selectedDeal.comments.map((c) => (
-                    <div key={c.id} className="bg-slate-800/60 p-3 rounded-xl text-xs">
+                    <div key={c.id} className="bg-slate-950 p-3 rounded-xl text-xs border border-slate-800/60">
                       <div className="flex justify-between font-semibold text-slate-300 mb-1">
                         <span>{c.author}</span>
                         <span className="text-slate-500">
@@ -497,26 +515,27 @@ export function App() {
                     </div>
                   ))
                 ) : (
-                  <p className="text-xs text-slate-500 italic">No comments yet. Be the first to share feedback!</p>
+                  <p className="text-xs text-slate-500 italic">No comments yet.</p>
                 )}
               </div>
 
-              {/* Add Comment Form */}
               <form onSubmit={handleAddComment} className="space-y-3">
-                <input
-                  type="text"
-                  placeholder="Your Name / Handle"
-                  value={commentAuthor}
-                  onChange={(e) => setCommentAuthor(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                />
+                {!telegramUser && (
+                  <input
+                    type="text"
+                    placeholder="Your Name / Handle"
+                    value={commentAuthor}
+                    onChange={(e) => setCommentAuthor(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
+                )}
                 <div className="flex space-x-2">
                   <input
                     type="text"
                     placeholder="Write a comment..."
                     value={newComment}
                     onChange={(e) => setNewComment(e.target.value)}
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                   />
                   <button
                     type="submit"
@@ -531,10 +550,10 @@ export function App() {
         </div>
       )}
 
-      {/* Create Deal Modal */}
+      {/* Post Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 relative shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 relative shadow-2xl">
             <button
               onClick={() => setShowModal(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-white p-1"
@@ -554,7 +573,7 @@ export function App() {
                     className={`py-2 rounded-xl border text-xs font-semibold transition ${
                       formState.listingType === 'Business'
                         ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500'
-                        : 'bg-slate-800 text-slate-400 border-slate-700'
+                        : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
                     Business
@@ -565,7 +584,7 @@ export function App() {
                     className={`py-2 rounded-xl border text-xs font-semibold transition ${
                       formState.listingType === 'VC'
                         ? 'bg-purple-600/20 text-purple-400 border-purple-500'
-                        : 'bg-slate-800 text-slate-400 border-slate-700'
+                        : 'bg-slate-950 text-slate-400 border-slate-800'
                     }`}
                   >
                     VC
@@ -581,7 +600,7 @@ export function App() {
                   value={formState.name}
                   onChange={(e) => setFormState({ ...formState, name: e.target.value })}
                   placeholder="e.g. Bistro Bar Pub Acquisition"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -591,7 +610,7 @@ export function App() {
                   <select
                     value={formState.stage}
                     onChange={(e) => setFormState({ ...formState, stage: e.target.value })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
                   >
                     <option value="Pre-Seed">Pre-Seed</option>
                     <option value="Seed">Seed</option>
@@ -607,7 +626,7 @@ export function App() {
                     value={formState.rate}
                     onChange={(e) => setFormState({ ...formState, rate: e.target.value })}
                     placeholder="e.g. 150000"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
               </div>
@@ -619,8 +638,8 @@ export function App() {
                     type="text"
                     value={formState.originCity}
                     onChange={(e) => setFormState({ ...formState, originCity: e.target.value })}
-                    placeholder="e.g. Singapore"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    placeholder="e.g. Ho Chi Minh"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
                 <div>
@@ -629,8 +648,8 @@ export function App() {
                     type="text"
                     value={formState.hqCity}
                     onChange={(e) => setFormState({ ...formState, hqCity: e.target.value })}
-                    placeholder="e.g. Johor Bahru"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    placeholder="e.g. Johor"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
               </div>
@@ -643,7 +662,7 @@ export function App() {
                   value={formState.description}
                   onChange={(e) => setFormState({ ...formState, description: e.target.value })}
                   placeholder="Provide overview details about this deal..."
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
@@ -653,7 +672,7 @@ export function App() {
                   type="file"
                   accept="image/*"
                   onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                  className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+                  className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-950 file:text-slate-200 hover:file:bg-slate-800 cursor-pointer"
                 />
               </div>
 
