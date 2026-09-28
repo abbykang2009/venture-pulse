@@ -12,6 +12,8 @@ import {
   Lock
 } from 'lucide-react';
 
+const BOT_USERNAME = 'VenturePulseAuthBot';
+
 interface Comment {
   id: string;
   dealId: string;
@@ -32,8 +34,6 @@ interface Deal {
   postedBy?: string;
   listingType?: 'Business' | 'VC';
   createdAt?: number;
-  verifications?: number;
-  disputes?: number;
   comments?: Comment[];
 }
 
@@ -54,7 +54,7 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   
-  // Telegram Auth State
+  // Authenticated User State
   const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
 
   // Admin & Modal state
@@ -65,7 +65,7 @@ export function App() {
   // Comment state
   const [newComment, setNewComment] = useState<string>('');
 
-  // Form State
+  // Form State for D1 + R2 payload
   const [formState, setFormState] = useState({
     name: '',
     stage: 'Seed',
@@ -77,37 +77,53 @@ export function App() {
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // Load Saved Auth Session
+  // Initialize Session from URL Auth Callback or Storage Session
   useEffect(() => {
-    const savedUser = localStorage.getItem('telegram_user');
-    if (savedUser) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get('id');
+    const first_name = urlParams.get('first_name');
+    const username = urlParams.get('username');
+    const photo_url = urlParams.get('photo_url');
+    const auth_date = urlParams.get('auth_date');
+    const hash = urlParams.get('hash');
+
+    if (id && first_name && hash) {
+      const authUser: TelegramUser = {
+        id: Number(id),
+        first_name,
+        username: username || undefined,
+        photo_url: photo_url || undefined,
+        auth_date: Number(auth_date),
+        hash,
+      };
+      setTelegramUser(authUser);
+      localStorage.setItem('vp_session', JSON.stringify(authUser));
+      window.history.replaceState({}, document.title, window.location.pathname);
+      return;
+    }
+
+    const savedSession = localStorage.getItem('vp_session');
+    if (savedSession) {
       try {
-        setTelegramUser(JSON.parse(savedUser));
+        setTelegramUser(JSON.parse(savedSession));
       } catch (e) {
-        console.error('Failed to parse saved Telegram user');
+        localStorage.removeItem('vp_session');
       }
     }
   }, []);
 
-  const handleTelegramLogin = () => {
-    // Authenticate user session
-    const user: TelegramUser = {
-      id: 12345678,
-      first_name: 'Gregory',
-      username: 'gregory_ang',
-      auth_date: Date.now(),
-      hash: 'auth_success',
-    };
-    setTelegramUser(user);
-    localStorage.setItem('telegram_user', JSON.stringify(user));
+  // Direct OAuth redirect to prevent iframe/bot domain rendering bugs
+  const triggerTelegramAuth = () => {
+    const currentOrigin = encodeURIComponent(window.location.origin + window.location.pathname);
+    window.location.href = `https://oauth.telegram.org/auth?bot_id=${BOT_USERNAME}&origin=${currentOrigin}&embed=0&request_access=write`;
   };
 
-  const handleLogoutTelegram = () => {
+  const handleLogout = () => {
     setTelegramUser(null);
-    localStorage.removeItem('telegram_user');
+    localStorage.removeItem('vp_session');
   };
 
-  // Fetch Deals from Backend
+  // Fetch All Opportunities from Cloudflare D1 via backend Worker/Pages API
   const fetchDeals = async () => {
     setLoading(true);
     try {
@@ -117,7 +133,7 @@ export function App() {
         setDeals(Array.isArray(data) ? data : []);
       }
     } catch (err) {
-      console.error('Error fetching deals:', err);
+      console.error('Error fetching deals from D1:', err);
     } finally {
       setLoading(false);
     }
@@ -129,7 +145,7 @@ export function App() {
     }
   }, [telegramUser]);
 
-  // Fetch Single Deal Details
+  // Fetch Full Details + Comments for Selected Opportunity
   const openDealDetails = async (deal: Deal) => {
     setSelectedDeal(deal);
     try {
@@ -143,11 +159,11 @@ export function App() {
     }
   };
 
-  // Submit New Deal
+  // Publish Opportunity (Image goes to R2, metadata to D1)
   const handlePublishDeal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formState.name || !formState.description) {
-      alert('Please fill in required fields.');
+      alert('Please fill in all required fields.');
       return;
     }
 
@@ -161,7 +177,10 @@ export function App() {
       formData.append('hqCity', formState.hqCity);
       formData.append('description', formState.description);
       formData.append('listingType', formState.listingType);
-      formData.append('postedBy', telegramUser ? telegramUser.first_name : 'User');
+      formData.append(
+        'postedBy', 
+        telegramUser?.username ? `@${telegramUser.username}` : telegramUser?.first_name || 'User'
+      );
 
       if (selectedFile) {
         formData.append('file', selectedFile);
@@ -187,13 +206,13 @@ export function App() {
         fetchDeals();
       }
     } catch (err) {
-      console.error('Error publishing deal:', err);
+      console.error('Error creating deal:', err);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Add Comment
+  // Add Comment stored in D1
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDeal || !newComment.trim()) return;
@@ -204,7 +223,7 @@ export function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dealId: selectedDeal.id,
-          author: telegramUser ? telegramUser.first_name : 'Anonymous',
+          author: telegramUser?.username ? `@${telegramUser.username}` : telegramUser?.first_name || 'Anonymous',
           text: newComment,
         }),
       });
@@ -218,15 +237,12 @@ export function App() {
     }
   };
 
-  // Delete Deal (Admin)
+  // Delete Deal from D1 & R2 (Admin)
   const handleDeleteDeal = async (dealId: string) => {
     if (!confirm('Are you sure you want to delete this deal?')) return;
 
     try {
-      const res = await fetch(`/api/deals?id=${dealId}`, {
-        method: 'DELETE',
-      });
-
+      const res = await fetch(`/api/deals?id=${dealId}`, { method: 'DELETE' });
       if (res.ok) {
         if (selectedDeal?.id === dealId) setSelectedDeal(null);
         fetchDeals();
@@ -236,14 +252,11 @@ export function App() {
     }
   };
 
-  // Filter Deals
   const filteredDeals = deals.filter((deal) => {
-    const matchesTab =
-      activeTab === 'All' ? true : (deal.listingType || 'Business') === activeTab;
+    const matchesTab = activeTab === 'All' ? true : (deal.listingType || 'Business') === activeTab;
     const matchesSearch =
       deal.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       deal.hqCity.toLowerCase().includes(searchQuery.toLowerCase());
-
     return matchesTab && matchesSearch;
   });
 
@@ -272,10 +285,10 @@ export function App() {
                   <Send className="w-4 h-4 text-sky-400" />
                 )}
                 <span className="font-semibold text-white">
-                  {telegramUser.first_name}
+                  {telegramUser.username ? `@${telegramUser.username}` : telegramUser.first_name}
                 </span>
                 <button 
-                  onClick={handleLogoutTelegram}
+                  onClick={handleLogout}
                   title="Logout"
                   className="text-slate-400 hover:text-rose-400 ml-1 transition"
                 >
@@ -306,7 +319,7 @@ export function App() {
         </div>
       </header>
 
-      {/* Main Area: Authenticated vs Unauthenticated Gate */}
+      {/* Main Content Gate */}
       {!telegramUser ? (
         <main className="flex-1 flex items-center justify-center p-6">
           <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center shadow-2xl">
@@ -319,8 +332,8 @@ export function App() {
             </p>
 
             <button
-              onClick={handleTelegramLogin}
-              className="w-full flex items-center justify-center space-x-2 bg-sky-500 hover:bg-sky-400 text-white px-5 py-3 rounded-xl text-sm font-semibold transition shadow-lg shadow-sky-500/20"
+              onClick={triggerTelegramAuth}
+              className="w-full flex items-center justify-center space-x-2 bg-sky-500 hover:bg-sky-400 text-white px-5 py-3 rounded-xl text-sm font-semibold transition shadow-lg shadow-sky-500/20 cursor-pointer"
             >
               <Send className="w-4 h-4" />
               <span>Log in with Telegram</span>
@@ -329,7 +342,6 @@ export function App() {
         </main>
       ) : (
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
-          {/* Controls Bar */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
             <div className="flex bg-slate-900 p-1 rounded-xl w-fit border border-slate-800">
               {(['All', 'Business', 'VC'] as const).map((tab) => (
@@ -359,9 +371,8 @@ export function App() {
             </div>
           </div>
 
-          {/* Grid */}
           {loading ? (
-            <div className="text-center py-20 text-slate-400">Loading opportunities...</div>
+            <div className="text-center py-20 text-slate-400">Loading opportunities from D1...</div>
           ) : filteredDeals.length === 0 ? (
             <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800">
               <p className="text-slate-400">No opportunities found.</p>
@@ -388,13 +399,10 @@ export function App() {
 
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent opacity-90" />
 
-                  {/* Ribbon */}
                   <div className="relative z-10 p-3 flex justify-between items-start">
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase shadow ${
-                        deal.listingType === 'VC'
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-emerald-600 text-white'
+                        deal.listingType === 'VC' ? 'bg-purple-600 text-white' : 'bg-emerald-600 text-white'
                       }`}
                     >
                       {deal.listingType || 'Business'}
@@ -413,7 +421,6 @@ export function App() {
                     )}
                   </div>
 
-                  {/* Tile Footer */}
                   <div className="relative z-10 p-3.5">
                     <h3 className="text-base font-bold text-white leading-snug line-clamp-2 group-hover:text-indigo-300 transition">
                       {deal.name}
@@ -430,7 +437,7 @@ export function App() {
         </main>
       )}
 
-      {/* Deal Details Modal */}
+      {/* Detail Modal */}
       {selectedDeal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-6 relative shadow-2xl">
@@ -452,9 +459,7 @@ export function App() {
                 {selectedDeal.listingType || 'Business'} Listing
               </span>
               <h2 className="text-2xl font-bold text-white">{selectedDeal.name}</h2>
-              <p className="text-sm text-indigo-400 font-medium mt-0.5">
-                {selectedDeal.stage} Stage
-              </p>
+              <p className="text-sm text-indigo-400 font-medium mt-0.5">{selectedDeal.stage} Stage</p>
             </div>
 
             {selectedDeal.imageUrl && (
@@ -502,9 +507,7 @@ export function App() {
                     <div key={c.id} className="bg-slate-950 p-3 rounded-xl text-xs border border-slate-800/60">
                       <div className="flex justify-between font-semibold text-slate-300 mb-1">
                         <span>{c.author}</span>
-                        <span className="text-slate-500">
-                          {new Date(c.createdAt).toLocaleDateString()}
-                        </span>
+                        <span className="text-slate-500">{new Date(c.createdAt).toLocaleDateString()}</span>
                       </div>
                       <p className="text-slate-400">{c.text}</p>
                     </div>
@@ -534,7 +537,7 @@ export function App() {
         </div>
       )}
 
-      {/* Post Modal */}
+      {/* Create Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 relative shadow-2xl">
@@ -583,7 +586,7 @@ export function App() {
                   required
                   value={formState.name}
                   onChange={(e) => setFormState({ ...formState, name: e.target.value })}
-                  placeholder="e.g. Bistro Bar Pub Acquisition"
+                  placeholder="e.g. Bistro Bar Acquisition"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
               </div>
@@ -622,7 +625,7 @@ export function App() {
                     type="text"
                     value={formState.originCity}
                     onChange={(e) => setFormState({ ...formState, originCity: e.target.value })}
-                    placeholder="e.g. Ho Chi Minh"
+                    placeholder="e.g. Singapore"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
@@ -632,7 +635,7 @@ export function App() {
                     type="text"
                     value={formState.hqCity}
                     onChange={(e) => setFormState({ ...formState, hqCity: e.target.value })}
-                    placeholder="e.g. Johor"
+                    placeholder="e.g. Singapore"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
@@ -651,7 +654,7 @@ export function App() {
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Upload Image (Optional)</label>
+                <label className="block text-slate-400 mb-1">Upload Image (Saved to R2)</label>
                 <input
                   type="file"
                   accept="image/*"
