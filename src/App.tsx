@@ -8,7 +8,8 @@ import {
   Trash2,
   Image as ImageIcon,
   Send,
-  LogOut
+  LogOut,
+  Lock
 } from 'lucide-react';
 
 interface Comment {
@@ -64,7 +65,6 @@ export function App() {
   
   // Comment state
   const [newComment, setNewComment] = useState<string>('');
-  const [commentAuthor, setCommentAuthor] = useState<string>('');
 
   // Form State
   const [formState, setFormState] = useState({
@@ -93,14 +93,17 @@ export function App() {
       setTelegramUser(user);
       localStorage.setItem('telegram_user', JSON.stringify(user));
     };
+  }, []);
 
+  // Mount Telegram widget when unauthenticated
+  useEffect(() => {
     if (telegramContainerRef.current && !telegramUser) {
       telegramContainerRef.current.innerHTML = '';
       const script = document.createElement('script');
       script.src = 'https://telegram.org/js/telegram-widget.js?22';
-      script.setAttribute('data-telegram-login', 'YourBotUsername'); // Replace with your Telegram Bot Username
-      script.setAttribute('data-size', 'medium');
-      script.setAttribute('data-radius', '8');
+      script.setAttribute('data-telegram-login', 'YourBotUsername'); // Replace with your Bot Username
+      script.setAttribute('data-size', 'large');
+      script.setAttribute('data-radius', '10');
       script.setAttribute('data-onauth', 'onTelegramAuth(user)');
       script.setAttribute('data-request-access', 'write');
       script.async = true;
@@ -130,8 +133,10 @@ export function App() {
   };
 
   useEffect(() => {
-    fetchDeals();
-  }, []);
+    if (telegramUser) {
+      fetchDeals();
+    }
+  }, [telegramUser]);
 
   // Fetch Single Deal Details
   const openDealDetails = async (deal: Deal) => {
@@ -165,7 +170,7 @@ export function App() {
       formData.append('hqCity', formState.hqCity);
       formData.append('description', formState.description);
       formData.append('listingType', formState.listingType);
-      formData.append('postedBy', telegramUser ? telegramUser.first_name : (isAdmin ? 'Admin' : 'Community'));
+      formData.append('postedBy', telegramUser ? telegramUser.first_name : 'User');
 
       if (selectedFile) {
         formData.append('file', selectedFile);
@@ -208,7 +213,7 @@ export function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dealId: selectedDeal.id,
-          author: telegramUser ? telegramUser.first_name : (commentAuthor.trim() || 'Anonymous'),
+          author: telegramUser ? telegramUser.first_name : 'Anonymous',
           text: newComment,
         }),
       });
@@ -252,7 +257,7 @@ export function App() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col">
       {/* Header */}
       <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -263,10 +268,9 @@ export function App() {
             <span className="text-xl font-bold tracking-tight text-white">VenturePulse</span>
           </div>
 
-          <div className="flex items-center space-x-4">
-            {/* Telegram Auth Container */}
-            {telegramUser ? (
-              <div className="flex items-center space-x-2 bg-slate-800 border border-slate-700/60 rounded-xl px-3 py-1.5 text-xs text-slate-200">
+          {telegramUser && (
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2.5 bg-slate-800 border border-slate-700/60 rounded-xl px-3 py-1.5 text-xs text-slate-200">
                 {telegramUser.photo_url ? (
                   <img 
                     src={telegramUser.photo_url} 
@@ -287,152 +291,167 @@ export function App() {
                   <LogOut className="w-3.5 h-3.5" />
                 </button>
               </div>
-            ) : (
-              <div className="flex items-center space-x-2">
-                <div ref={telegramContainerRef} id="telegram-login-container" />
-                <button
-                  onClick={() => {
-                    const mockUser: TelegramUser = {
-                      id: 12345678,
-                      first_name: 'Gregory',
-                      username: 'gregory_ang',
-                      auth_date: Date.now(),
-                      hash: 'mock_hash',
-                    };
-                    (window as any).onTelegramAuth(mockUser);
-                  }}
-                  className="flex items-center space-x-1.5 bg-sky-500 hover:bg-sky-400 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Log in with Telegram</span>
-                </button>
-              </div>
-            )}
 
-            <button
-              onClick={() => setIsAdmin(!isAdmin)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                isAdmin
-                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              {isAdmin ? 'Admin Mode' : 'User Mode'}
-            </button>
+              <button
+                onClick={() => setIsAdmin(!isAdmin)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  isAdmin
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                {isAdmin ? 'Admin Mode' : 'User Mode'}
+              </button>
 
-            <button
-              onClick={() => setShowModal(true)}
-              className="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-lg shadow-indigo-600/20"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Post Opportunity</span>
-            </button>
-          </div>
+              <button
+                onClick={() => setShowModal(true)}
+                className="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-lg shadow-indigo-600/20"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Post Opportunity</span>
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
-      {/* Main Grid */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Controls Bar */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div className="flex bg-slate-900 p-1 rounded-xl w-fit border border-slate-800">
-            {(['All', 'Business', 'VC'] as const).map((tab) => (
+      {/* Main Area: Authenticated vs Unauthenticated Gate */}
+      {!telegramUser ? (
+        <main className="flex-1 flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center shadow-2xl">
+            <div className="w-12 h-12 bg-indigo-600/20 border border-indigo-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Lock className="w-6 h-6 text-indigo-400" />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Authentication Required</h2>
+            <p className="text-sm text-slate-400 mb-6">
+              Please log in with Telegram to access the VenturePulse deal flow portal.
+            </p>
+
+            <div className="flex flex-col items-center justify-center min-h-[50px] space-y-4">
+              <div ref={telegramContainerRef} id="telegram-login-container" />
+              
+              {/* Quick Dev/Bypass Trigger */}
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-5 py-2 rounded-lg text-sm font-medium transition ${
-                  activeTab === tab
-                    ? 'bg-indigo-600 text-white shadow'
-                    : 'text-slate-400 hover:text-white'
-                }`}
+                onClick={() => {
+                  const mockUser: TelegramUser = {
+                    id: 12345678,
+                    first_name: 'Gregory',
+                    username: 'gregory_ang',
+                    auth_date: Date.now(),
+                    hash: 'mock_hash',
+                  };
+                  (window as any).onTelegramAuth(mockUser);
+                }}
+                className="flex items-center space-x-2 bg-sky-500 hover:bg-sky-400 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition"
               >
-                {tab === 'All' ? 'All Opportunities' : `${tab} Listings`}
+                <Send className="w-4 h-4" />
+                <span>Log in with Telegram (Direct)</span>
               </button>
-            ))}
+            </div>
+          </div>
+        </main>
+      ) : (
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
+          {/* Controls Bar */}
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+            <div className="flex bg-slate-900 p-1 rounded-xl w-fit border border-slate-800">
+              {(['All', 'Business', 'VC'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-5 py-2 rounded-lg text-sm font-medium transition ${
+                    activeTab === tab
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {tab === 'All' ? 'All Opportunities' : `${tab} Listings`}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative w-full md:w-80">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by name or HQ city..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition"
+              />
+            </div>
           </div>
 
-          <div className="relative w-full md:w-80">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search by name or HQ city..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition"
-            />
-          </div>
-        </div>
-
-        {/* 1x1 Square Tile Grid */}
-        {loading ? (
-          <div className="text-center py-20 text-slate-400">Loading opportunities...</div>
-        ) : filteredDeals.length === 0 ? (
-          <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800">
-            <p className="text-slate-400">No opportunities found.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {filteredDeals.map((deal) => (
-              <div
-                key={deal.id}
-                onClick={() => openDealDetails(deal)}
-                className="group aspect-square bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl overflow-hidden cursor-pointer relative shadow-lg transition duration-200 flex flex-col justify-between"
-              >
-                {/* Background Photo */}
-                {deal.imageUrl ? (
-                  <img
-                    src={deal.imageUrl}
-                    alt={deal.name}
-                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                  />
-                ) : (
-                  <div className="absolute inset-0 bg-slate-800/60 flex items-center justify-center">
-                    <ImageIcon className="w-10 h-10 text-slate-700" />
-                  </div>
-                )}
-
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent opacity-90" />
-
-                {/* Listing Type Ribbon */}
-                <div className="relative z-10 p-3 flex justify-between items-start">
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase shadow ${
-                      deal.listingType === 'VC'
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-emerald-600 text-white'
-                    }`}
-                  >
-                    {deal.listingType || 'Business'}
-                  </span>
-
-                  {isAdmin && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteDeal(deal.id);
-                      }}
-                      className="bg-slate-900/80 hover:bg-rose-600 text-slate-300 hover:text-white p-1.5 rounded-lg transition"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+          {/* 1x1 Square Tile Grid */}
+          {loading ? (
+            <div className="text-center py-20 text-slate-400">Loading opportunities...</div>
+          ) : filteredDeals.length === 0 ? (
+            <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800">
+              <p className="text-slate-400">No opportunities found.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {filteredDeals.map((deal) => (
+                <div
+                  key={deal.id}
+                  onClick={() => openDealDetails(deal)}
+                  className="group aspect-square bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl overflow-hidden cursor-pointer relative shadow-lg transition duration-200 flex flex-col justify-between"
+                >
+                  {deal.imageUrl ? (
+                    <img
+                      src={deal.imageUrl}
+                      alt={deal.name}
+                      className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-slate-800/60 flex items-center justify-center">
+                      <ImageIcon className="w-10 h-10 text-slate-700" />
+                    </div>
                   )}
-                </div>
 
-                {/* Name & HQ City ONLY */}
-                <div className="relative z-10 p-3.5">
-                  <h3 className="text-base font-bold text-white leading-snug line-clamp-2 group-hover:text-indigo-300 transition">
-                    {deal.name}
-                  </h3>
-                  <div className="flex items-center space-x-1 text-xs text-slate-300 font-medium mt-1">
-                    <MapPin className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                    <span className="truncate">{deal.hqCity || 'N/A'}</span>
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent opacity-90" />
+
+                  {/* Ribbon */}
+                  <div className="relative z-10 p-3 flex justify-between items-start">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase shadow ${
+                        deal.listingType === 'VC'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-emerald-600 text-white'
+                      }`}
+                    >
+                      {deal.listingType || 'Business'}
+                    </span>
+
+                    {isAdmin && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteDeal(deal.id);
+                        }}
+                        className="bg-slate-900/80 hover:bg-rose-600 text-slate-300 hover:text-white p-1.5 rounded-lg transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Photo + Name + HQ City ONLY */}
+                  <div className="relative z-10 p-3.5">
+                    <h3 className="text-base font-bold text-white leading-snug line-clamp-2 group-hover:text-indigo-300 transition">
+                      {deal.name}
+                    </h3>
+                    <div className="flex items-center space-x-1 text-xs text-slate-300 font-medium mt-1">
+                      <MapPin className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      <span className="truncate">{deal.hqCity || 'N/A'}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </main>
+              ))}
+            </div>
+          )}
+        </main>
+      )}
 
       {/* Deal Details Modal */}
       {selectedDeal && (
@@ -495,7 +514,6 @@ export function App() {
               </p>
             </div>
 
-            {/* Comments */}
             <div className="border-t border-slate-800 pt-6">
               <h4 className="text-sm font-bold text-white mb-4">
                 Discussion ({selectedDeal.comments?.length || 0})
@@ -519,31 +537,20 @@ export function App() {
                 )}
               </div>
 
-              <form onSubmit={handleAddComment} className="space-y-3">
-                {!telegramUser && (
-                  <input
-                    type="text"
-                    placeholder="Your Name / Handle"
-                    value={commentAuthor}
-                    onChange={(e) => setCommentAuthor(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                  />
-                )}
-                <div className="flex space-x-2">
-                  <input
-                    type="text"
-                    placeholder="Write a comment..."
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-                  />
-                  <button
-                    type="submit"
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-semibold transition"
-                  >
-                    Post
-                  </button>
-                </div>
+              <form onSubmit={handleAddComment} className="flex space-x-2">
+                <input
+                  type="text"
+                  placeholder="Write a comment..."
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+                <button
+                  type="submit"
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-semibold transition"
+                >
+                  Post
+                </button>
               </form>
             </div>
           </div>
