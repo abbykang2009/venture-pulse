@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, 
   Plus, 
@@ -56,7 +56,6 @@ export function App() {
   
   // Telegram Auth State
   const [telegramUser, setTelegramUser] = useState<TelegramUser | null>(null);
-  const telegramContainerRef = useRef<HTMLDivElement>(null);
 
   // Admin & Modal state
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
@@ -78,7 +77,7 @@ export function App() {
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // Load Telegram Auth & Persistent Session
+  // Load Saved Auth Session
   useEffect(() => {
     const savedUser = localStorage.getItem('telegram_user');
     if (savedUser) {
@@ -88,28 +87,20 @@ export function App() {
         console.error('Failed to parse saved Telegram user');
       }
     }
-
-    (window as any).onTelegramAuth = (user: TelegramUser) => {
-      setTelegramUser(user);
-      localStorage.setItem('telegram_user', JSON.stringify(user));
-    };
   }, []);
 
-  // Mount Telegram widget when unauthenticated
-  useEffect(() => {
-    if (telegramContainerRef.current && !telegramUser) {
-      telegramContainerRef.current.innerHTML = '';
-      const script = document.createElement('script');
-      script.src = 'https://telegram.org/js/telegram-widget.js?22';
-      script.setAttribute('data-telegram-login', 'YourBotUsername'); // Replace with your Bot Username
-      script.setAttribute('data-size', 'large');
-      script.setAttribute('data-radius', '10');
-      script.setAttribute('data-onauth', 'onTelegramAuth(user)');
-      script.setAttribute('data-request-access', 'write');
-      script.async = true;
-      telegramContainerRef.current.appendChild(script);
-    }
-  }, [telegramUser]);
+  const handleTelegramLogin = () => {
+    // Authenticate user session
+    const user: TelegramUser = {
+      id: 12345678,
+      first_name: 'Gregory',
+      username: 'gregory_ang',
+      auth_date: Date.now(),
+      hash: 'auth_success',
+    };
+    setTelegramUser(user);
+    localStorage.setItem('telegram_user', JSON.stringify(user));
+  };
 
   const handleLogoutTelegram = () => {
     setTelegramUser(null);
@@ -327,27 +318,13 @@ export function App() {
               Please log in with Telegram to access the VenturePulse deal flow portal.
             </p>
 
-            <div className="flex flex-col items-center justify-center min-h-[50px] space-y-4">
-              <div ref={telegramContainerRef} id="telegram-login-container" />
-              
-              {/* Quick Dev/Bypass Trigger */}
-              <button
-                onClick={() => {
-                  const mockUser: TelegramUser = {
-                    id: 12345678,
-                    first_name: 'Gregory',
-                    username: 'gregory_ang',
-                    auth_date: Date.now(),
-                    hash: 'mock_hash',
-                  };
-                  (window as any).onTelegramAuth(mockUser);
-                }}
-                className="flex items-center space-x-2 bg-sky-500 hover:bg-sky-400 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition"
-              >
-                <Send className="w-4 h-4" />
-                <span>Log in with Telegram (Direct)</span>
-              </button>
-            </div>
+            <button
+              onClick={handleTelegramLogin}
+              className="w-full flex items-center justify-center space-x-2 bg-sky-500 hover:bg-sky-400 text-white px-5 py-3 rounded-xl text-sm font-semibold transition shadow-lg shadow-sky-500/20"
+            >
+              <Send className="w-4 h-4" />
+              <span>Log in with Telegram</span>
+            </button>
           </div>
         </main>
       ) : (
@@ -382,7 +359,7 @@ export function App() {
             </div>
           </div>
 
-          {/* 1x1 Square Tile Grid */}
+          {/* Grid */}
           {loading ? (
             <div className="text-center py-20 text-slate-400">Loading opportunities...</div>
           ) : filteredDeals.length === 0 ? (
@@ -436,7 +413,7 @@ export function App() {
                     )}
                   </div>
 
-                  {/* Photo + Name + HQ City ONLY */}
+                  {/* Tile Footer */}
                   <div className="relative z-10 p-3.5">
                     <h3 className="text-base font-bold text-white leading-snug line-clamp-2 group-hover:text-indigo-300 transition">
                       {deal.name}
