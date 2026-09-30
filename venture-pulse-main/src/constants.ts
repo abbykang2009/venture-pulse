@@ -1,4 +1,4 @@
-export const STAGES = ['Seed Round', 'Series A', 'Series B', 'Series C', 'Others'];
+export const STAGES = ['Pub', 'Club', 'Massage', 'Escort', 'Sugarbaby', 'Others'];
 export const ORIGINS = ['Thailand', 'Vietnam', 'China', 'Malaysia', 'Singapore', 'Others'];
 export const LOCATIONS = ['Johor Bahru (JB)', 'Kuala Lumpur (KL)', 'Singapore', 'Ho Chi Minh (HCM)', 'Hanoi', 'Others'];
 export const CURRENCIES = ['MYR', 'SGD', 'VND', 'THB', 'RMB', 'USD'];
