@@ -188,7 +188,7 @@ export default function CreateDealModal({
               type="text"
               required
               maxLength={120}
-              placeholder="e.g. Pre-IPO for Vietnam Stock Exchange Listing"
+              placeholder="e.g. Anne Nguyen"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-white/60"
