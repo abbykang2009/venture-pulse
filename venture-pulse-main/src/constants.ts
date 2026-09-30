@@ -7,8 +7,8 @@ export const CURRENCIES = ['MYR', 'SGD', 'VND', 'THB', 'RMB', 'USD'];
 // ADMIN_TAG_LABELS is what's actually shown to admins and on the ribbon.
 export const ADMIN_TAGS = ['Business', 'VC'] as const;
 export const ADMIN_TAG_LABELS: Record<(typeof ADMIN_TAGS)[number], string> = {
-  Business: 'Founder',
-  VC: 'Platform',
+  Business: 'Independent',
+  VC: 'Agency',
 };
 
 export const MAX_MEDIA = 9;
