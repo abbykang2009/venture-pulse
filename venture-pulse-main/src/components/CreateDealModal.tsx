@@ -255,7 +255,7 @@ export default function CreateDealModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-neutral-300 mb-1">Budget (Per Share)</label>
+              <label className="block text-xs font-semibold text-neutral-300 mb-1">Budget</label>
               <input
                 type="text"
                 inputMode="numeric"
