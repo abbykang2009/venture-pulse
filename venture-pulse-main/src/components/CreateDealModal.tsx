@@ -239,7 +239,7 @@ export default function CreateDealModal({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-neutral-300 mb-1">Type</label>
+            <label className="block text-xs font-semibold text-neutral-300 mb-1">Stage</label>
             <select
               required
               value={stage}
