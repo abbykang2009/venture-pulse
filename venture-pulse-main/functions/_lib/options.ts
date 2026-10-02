@@ -1,5 +1,5 @@
 export const STAGES = ['Pub', 'Club', 'Massage/SPA', 'Escort', 'Sugarbaby', 'KTV', 'Others'];
-export const ORIGINS = ['Thailand', 'Vietnam', 'China', 'Malaysia', 'Singapore', 'Others'];
+export const ORIGINS = ['Thailand', 'Vietnam', 'China', 'Malaysia', 'Singapore', 'Philppines', 'Indonesia', 'Others'];
 export const LOCATIONS = ['Johor Bahru (JB)', 'Kuala Lumpur (KL)', 'Singapore', 'Ho Chi Minh (HCM)', 'Hanoi', 'Others'];
 export const CURRENCIES = ['MYR', 'SGD', 'VND', 'THB', 'RMB', 'USD'];
 export const ADMIN_TAGS = ['Business', 'VC'];
