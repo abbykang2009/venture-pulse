@@ -9,7 +9,7 @@ type FieldKey =
 
 const HEADER_ALIASES: Record<FieldKey, string[]> = {
   name: ['name'],
-  stage: ['stage'],
+  stage: ['stage', 'type'],
   origin: ['origin'],
   location: ['location', 'current location'],
   budget: ['budget', 'budget (per share)'],
@@ -23,7 +23,7 @@ const HEADER_ALIASES: Record<FieldKey, string[]> = {
   alsoGlobal: ['also global', 'also show in global search'],
 };
 
-const TEMPLATE_HEADERS = ['Name', 'Stage', 'Origin', 'Location', 'Budget', 'Currency', 'Description', 'Contact', 'Social', 'Public Contact', 'Tag', 'Circle', 'Also Global'];
+const TEMPLATE_HEADERS = ['Name', 'Type', 'Origin', 'Location', 'Budget', 'Currency', 'Description', 'Contact', 'Social', 'Public Contact', 'Tag', 'Circle', 'Also Global'];
 const TEMPLATE_EXAMPLE = ['Acme Robotics', 'Seed Round', 'Vietnam', 'Ho Chi Minh (HCM)', '500', 'USD', 'Robotics startup demoed at the summit', 'https://t.me/acme', 'https://acme.co', 'no', '', '', ''];
 
 function toBool(v: string | undefined) {
@@ -89,7 +89,7 @@ function buildRows(text: string): { rows: ParsedRow[]; unmatchedHeaders: boolean
 
     const errors: string[] = [];
     if (!raw.name.trim()) errors.push('Name is required');
-    if (!STAGES.includes(raw.stage.trim())) errors.push(`Stage "${raw.stage}" is not valid`);
+    if (!STAGES.includes(raw.stage.trim())) errors.push(`Type "${raw.stage}" is not valid`);
     if (!ORIGINS.includes(raw.origin.trim())) errors.push(`Origin "${raw.origin}" is not valid`);
     if (!LOCATIONS.includes(raw.location.trim())) errors.push(`Location "${raw.location}" is not valid`);
     if (!CURRENCIES.includes(raw.currency.trim())) errors.push(`Currency "${raw.currency}" is not valid`);
@@ -216,14 +216,14 @@ export default function BulkImportPage({ onUnauthorized }: { onUnauthorized: () 
           rows={8}
           value={text}
           onChange={(e) => { setText(e.target.value); setResult(null); }}
-          placeholder="Name	Stage	Origin	Location	Budget	Currency	Description ..."
+          placeholder="Name	Type	Origin	Location	Budget	Currency	Description ..."
           className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-xs font-mono text-white focus:outline-none focus:border-white/60 resize-none"
         />
       </div>
 
       {text.trim() && unmatchedHeaders && (
         <p className="text-xs text-rose-400 bg-rose-950/30 border border-rose-900/50 rounded-xl px-3 py-2">
-          Couldn't find all the required columns (Name, Stage, Origin, Location, Budget, Currency). Check your header row matches the template.
+          Couldn't find all the required columns (Name, Type, Origin, Location, Budget, Currency). Check your header row matches the template.
         </p>
       )}
 
@@ -243,7 +243,7 @@ export default function BulkImportPage({ onUnauthorized }: { onUnauthorized: () 
                   <tr>
                     <th className="text-left px-3 py-2 font-semibold">Row</th>
                     <th className="text-left px-3 py-2 font-semibold">Name</th>
-                    <th className="text-left px-3 py-2 font-semibold">Stage</th>
+                    <th className="text-left px-3 py-2 font-semibold">Type</th>
                     <th className="text-left px-3 py-2 font-semibold">Origin</th>
                     <th className="text-left px-3 py-2 font-semibold">Location</th>
                     <th className="text-left px-3 py-2 font-semibold">Budget</th>
